@@ -1,0 +1,276 @@
+#!/usr/bin/env bash
+################################################################################
+################################################################################
+####### Sync or update repository visibilty ####################################
+################################################################################
+################################################################################
+
+# LEGEND:
+# This script is used by the gh command line to help sync or update the
+# visibility of repositories. If no inpput file is provided, it will sync the
+# visibility of all repositories. If an input file is provided, it will update
+# the visibility of all repositories in the input file.
+
+#
+# PREREQS:
+# You need to have the following to run this script successfully:
+# - GitHub Personal Access Token with a scope of "repos" and access to the organization(s) that will be updated.
+# - Either the name of the organizations to be synced, or a file containing the names of the repositories to be updated
+# - jq installed on the machine running the query
+#
+# NOTES:
+#
+
+################################################################################
+#### Function PrintUsage #######################################################
+PrintUsage()
+{
+  cat <<EOM
+Usage: gh repo-visibility [options]
+
+Options:
+    -h, --help                    : Show script help
+    -d, --debug                   : Enable Debug logging
+    -i, --input                   : Set path to a file with a list of Org/Repo,visibility to update, one per line
+    -dt, --destination-token      :  Set Personal Access Token with repo scope to destination Organization
+    -st, --source-token           : Set Personal Access Token with repo scope to original Organization
+    -p, --repo-page-size          : Set the pagination size for the initial repository GraphQL query - defaults to 20
+                                    If a timeout occurs, reduce this value
+    
+    -so, --source-org             : Name of the source GitHub Organization to be analyzed
+    -do, --destination-org        : Name of the destination GitHub Organization to be updated
+
+Description:
+repo-visibilty scans a source organization or input file for all repositories and gathers their visibilty.
+  It then updates the visibilty of all repositories in the destination organization.
+
+Example:
+  gh repo-visibility --source-org OriginalOrg --destination-org MyNewOrg --source-token ABCDEFG1234567 --destination-token 1234567ABCDEFG
+
+EOM
+  exit 0
+}
+####################################
+# Read in the parameters if passed #
+####################################
+PARAMS=""
+while (( "$#" )); do
+  case "$1" in
+    -h|--help)
+      PrintUsage;
+      ;;
+    -d|--debug)
+      DEBUG=true
+      shift
+      ;;
+    -dt|--destination-token)
+      DESTINATION_TOKEN=$2
+      shift 2
+      ;;
+    -st|--source-token)
+      SOURCE_TOKEN=$2
+      shift 2
+      ;;
+    -i|--input)
+      INPUT_FILE_NAME=$2
+      shift 2
+      ;;
+    -p|--repo-page-size)
+      REPO_PAGE_SIZE=$2
+      shift 2
+      ;;
+    -do|--destination-org)
+      DESTINATION_ORG_NAME=$2
+      shift 2
+      ;;
+    -so|--source-org)
+      SOURCE_ORG_NAME=$2
+      shift 2
+      ;;
+    --) # end argument parsing
+      shift
+      break
+      ;;
+    -*) # unsupported flags
+      echo "Error: Unsupported flag $1" >&2
+      exit 1
+      ;;
+    *) # preserve positional arguments
+  PARAMS="$PARAMS $1"
+  shift
+  ;;
+  esac
+done
+
+##################################################
+# Set positional arguments in their proper place #
+##################################################
+eval set -- "$PARAMS"
+
+############
+# Defaults #
+############
+REPO_PAGE_SIZE="${REPO_PAGE_SIZE:-100}" # Default to 100 if not passed
+
+###########
+# GLOBALS #
+###########
+SOURCE_REPO_ARRAY=()      # Array of source repo names
+DESTINATION_REPO_ARRAY=() # Array of destination repo names
+UPDATE_REPO_ARRAY=()      # Array of repo names to update
+
+################################################################################
+############################ FUNCTIONS #########################################
+################################################################################
+################################################################################
+################################################################################
+#### Function DebugJQ ##########################################################
+DebugJQ() {
+  # If Debug is on, print it out...
+  if [[ ${DEBUG} == true ]]; then
+    echo "$1" | jq '.'
+  fi
+}
+################################################################################
+#### Function Debug ############################################################
+Debug() {
+  # If Debug is on, print it out...
+  if [[ ${DEBUG} == true ]]; then
+    echo "$1"
+  fi
+}
+################################################################################
+#### Function Header ###########################################################
+Header() {
+  echo ""
+  echo "######################################################"
+  echo "######################################################"
+  echo "########## GitHub repo visibilty updater #############"
+  echo "######################################################"
+  echo "######################################################"
+  echo ""
+
+  ###########################################
+  # Make lower case to prevent weird issues #
+  ###########################################
+  DESTINATION_ORG_NAME=$(echo "${DESTINATION_ORG_NAME}" | tr '[:upper:]' '[:lower:]')
+  SOURCE_ORG_NAME=$(echo "${SOURCE_ORG_NAME}" | tr '[:upper:]' '[:lower:]')
+
+  # Print the organizations being synced if debug
+  echo "Syncing ${SOURCE_ORG_NAME} repository visibility to ${DESTINATION_ORG_NAME}"
+  echo ""
+
+  # Debug info
+  Debug "Source Token: ${SOURCE_TOKEN}"
+  Debug "Destination Token: ${DESTINATION_TOKEN}"
+  Debug "Source Organization: ${SOURCE_ORG_NAME}"
+  Debug "Destination Organization: ${DESTINATION_ORG_NAME}"
+  Debug "Repo Page Size: ${REPO_PAGE_SIZE}"
+  Debug "Input File: ${INPUT_FILE_NAME}"
+}
+################################################################################
+#### Function Footer ###########################################################
+Footer() {
+  #######################################
+  # Basic footer information and totals #
+  #######################################
+  echo ""
+  echo "######################################################"
+  echo "The script has completed"
+  echo "######################################################"
+  echo ""
+}
+################################################################################
+#### Function ValidateJQ #######################################################
+ValidateJQ() {
+  # Need to validate the machine has jq installed as we use it to do the parsing
+  # of all the json returns from GitHub
+
+  if ! jq --version &>/dev/null
+  then
+    echo "Failed to find jq in the path!"
+    echo "If this is a Mac, run command: brew install jq"
+    echo "If this is Debian, run command: sudo apt install jq"
+    echo "If this is Centos, run command: yum install jq"
+    echo "Once installed, please run this script again."
+    exit 1
+  fi
+}
+################################################################################
+#### Function UpdateRepoVisibility #############################################
+UpdateRepoVisibility() {
+  # Pull in vars from the function call
+  ORG_NAME="$1"
+  REPO_NAME="$2"
+  VISIBILITY="$3"
+
+}
+################################################################################
+#### Function GetAllSourceRepos ################################################
+GetAllSourceRepos() {
+   # Pull in vars from the function call
+  ORG_NAME="$1"
+}
+################################################################################
+#### Function GetAllDestinationRepos ###########################################
+GetAllDestinationRepos() {
+   # Pull in vars from the function call
+  ORG_NAME="$1"
+}
+################################################################################
+############################## MAIN ############################################
+################################################################################
+
+##########
+# Header #
+##########
+Header
+
+#########################
+# Validate JQ installed #
+#########################
+ValidateJQ
+
+#####################################
+# Check if were using an input file #
+#####################################
+if [[ -n "${INPUT_FILE_NAME}" ]]; then
+  # Read in the input file and parse the lines
+  while read -r line; do
+    #############################################
+    # Split the line into the org and repo name #
+    #############################################
+    DESTINATION_ORG_NAME=$(echo "${line}" | cut -d'/' -f1)
+    DESTINATION_REPO_NAME=$(echo "${line}" | cut -d'/' -f2)
+    VISIBILITY=$(echo "${line}" | cut -d',' -f3)
+
+    #####################################
+    # Update the visibility of the repo #
+    #####################################
+    UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}"
+  done < "${INPUT_FILE_NAME}"
+else
+  #########################################
+  # Get the list of all repos in the orgs #
+  #########################################
+  GetAllSourceRepos "${SOURCE_ORG_NAME}"
+  GetAllDestinationRepos "${DESTINATION_ORG_NAME}"
+  ###############################################################
+  # Loop through the repos and generate list of repos to update #
+  ###############################################################
+  GenerateUpdateList
+  # Loop through the list of repos and update the visibility
+  for OBJECT in "${UPDATE_REPO_ARRAY[@]}"; do
+    # Get the vars from the string
+    DESTINATION_ORG_NAME=$(echo "${OBJECT}" | cut -d'/' -f1)
+    DESTINATION_REPO_NAME=$(echo "${OBJECT}" | cut -d'/' -f2)
+    VISIBILITY=$(echo "${OBJECT}" | cut -d',' -f3)
+    # run the update
+    UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}"
+  done
+fi
+
+##########
+# Footer #
+##########
+Footer
