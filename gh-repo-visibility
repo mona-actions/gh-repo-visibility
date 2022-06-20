@@ -110,11 +110,14 @@ eval set -- "$PARAMS"
 ############
 # Defaults #
 ############
-REPO_PAGE_SIZE="${REPO_PAGE_SIZE:-100}"
+REPO_PAGE_SIZE="${REPO_PAGE_SIZE:-100}" # Default to 100 if not passed
 
 ###########
 # GLOBALS #
 ###########
+SOURCE_REPO_ARRAY=()      # Array of source repo names
+DESTINATION_REPO_ARRAY=() # Array of destination repo names
+UPDATE_REPO_ARRAY=()      # Array of repo names to update
 
 ################################################################################
 ############################ FUNCTIONS #########################################
@@ -156,6 +159,14 @@ Header() {
   # Print the organizations being synced if debug
   echo "Syncing ${SOURCE_ORG_NAME} repository visibility to ${DESTINATION_ORG_NAME}"
   echo ""
+
+  # Debug info
+  Debug "Source Token: ${SOURCE_TOKEN}"
+  Debug "Destination Token: ${DESTINATION_TOKEN}"
+  Debug "Source Organization: ${SOURCE_ORG_NAME}"
+  Debug "Destination Organization: ${DESTINATION_ORG_NAME}"
+  Debug "Repo Page Size: ${REPO_PAGE_SIZE}"
+  Debug "Input File: ${INPUT_FILE_NAME}"
 }
 ################################################################################
 #### Function Footer ###########################################################
@@ -186,6 +197,27 @@ ValidateJQ() {
   fi
 }
 ################################################################################
+#### Function UpdateRepoVisibility #############################################
+UpdateRepoVisibility() {
+  # Pull in vars from the function call
+  ORG_NAME="$1"
+  REPO_NAME="$2"
+  VISIBILITY="$3"
+
+}
+################################################################################
+#### Function GetAllSourceRepos ################################################
+GetAllSourceRepos() {
+   # Pull in vars from the function call
+  ORG_NAME="$1"
+}
+################################################################################
+#### Function GetAllDestinationRepos ###########################################
+GetAllDestinationRepos() {
+   # Pull in vars from the function call
+  ORG_NAME="$1"
+}
+################################################################################
 ############################## MAIN ############################################
 ################################################################################
 
@@ -198,3 +230,42 @@ Header
 # Validate JQ installed #
 #########################
 ValidateJQ
+
+#####################################
+# Check if were using an input file #
+#####################################
+if [[ -n "${INPUT_FILE_NAME}" ]]; then
+  # Read in the input file and parse the lines
+  while read -r line; do
+    #############################################
+    # Split the line into the org and repo name #
+    #############################################
+    DESTINATION_ORG_NAME=$(echo "${line}" | cut -d'/' -f1)
+    DESTINATION_REPO_NAME=$(echo "${line}" | cut -d'/' -f2)
+    VISIBILITY=$(echo "${line}" | cut -d',' -f3)
+
+    #####################################
+    # Update the visibility of the repo #
+    #####################################
+    UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}"
+  done < "${INPUT_FILE_NAME}"
+else
+  #########################################
+  # Get the list of all repos in the orgs #
+  #########################################
+  GetAllSourceRepos "${SOURCE_ORG_NAME}"
+  GetAllDestinationRepos "${DESTINATION_ORG_NAME}"
+  ###############################################################
+  # Loop through the repos and generate list of repos to update #
+  ###############################################################
+  GenerateUpdateList
+  # Loop through the list of repos and update the visibility
+  for REPO_NAME in "${UPDATE_REPO_ARRAY[@]}"; do
+    UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${REPO_NAME}" "${VISIBILITY}"
+  done
+fi
+
+##########
+# Footer #
+##########
+Footer
