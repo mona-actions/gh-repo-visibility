@@ -260,8 +260,13 @@ else
   ###############################################################
   GenerateUpdateList
   # Loop through the list of repos and update the visibility
-  for REPO_NAME in "${UPDATE_REPO_ARRAY[@]}"; do
-    UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${REPO_NAME}" "${VISIBILITY}"
+  for OBJECT in "${UPDATE_REPO_ARRAY[@]}"; do
+    # Get the vars from the string
+    DESTINATION_ORG_NAME=$(echo "${OBJECT}" | cut -d'/' -f1)
+    DESTINATION_REPO_NAME=$(echo "${OBJECT}" | cut -d'/' -f2)
+    VISIBILITY=$(echo "${OBJECT}" | cut -d',' -f3)
+    # run the update
+    UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}"
   done
 fi
 
