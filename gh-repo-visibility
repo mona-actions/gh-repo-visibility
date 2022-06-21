@@ -241,9 +241,6 @@ UpdateRepoVisibility() {
 ################################################################################
 #### Function GetAllSourceRepos ################################################
 GetAllSourceRepos() {
-   # Pull in vars from the function call
-  ORG_NAME="$1"
-
   Debug "Getting all source repos for ${ORG_NAME}"
   Debug "SOURCE_END_CURSOR: ${SOURCE_END_CURSOR}"
 
@@ -254,7 +251,6 @@ GetAllSourceRepos() {
     -H "Authorization: Bearer ${SOURCE_TOKEN}" \
     -H 'Content-Type: application/json' \
     -d "{\"query\":\"query {organization(login: \"${SOURCE_ORG_NAME}\") {repositories(first: ${REPO_PAGE_SIZE}, after: ${SOURCE_END_CURSOR}) {nodes {nameWithOwner visibility isTemplate}totalCount pageInfo {hasNextPage endCursor}}}}\"}" 2>&1)
-  
 
   #######################
   # Load the error code #
@@ -338,8 +334,95 @@ ParseSourceRepoData() {
 ################################################################################
 #### Function GetAllDestinationRepos ###########################################
 GetAllDestinationRepos() {
-   # Pull in vars from the function call
-  ORG_NAME="$1"
+  Debug "Getting all source repos for ${ORG_NAME}"
+  Debug "DESTINATION_END_CURSOR: ${DESTINATION_END_CURSOR}"
+
+  # Get the data block from the GitHub API
+  DATA_BLOCK=$(curl --fail -s -X POST \
+    --url https://api.github.com/graphql \
+    -H 'Accept: application/vnd.github.starfire-preview+json' \
+    -H "Authorization: Bearer ${DESTINATION_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"query\":\"query {organization(login: \"${DESTINATION_ORG_NAME}\") {repositories(first: ${REPO_PAGE_SIZE}, after: ${DESTINATION_END_CURSOR}) {nodes {nameWithOwner visibility isTemplate}totalCount pageInfo {hasNextPage endCursor}}}}\"}" 2>&1)
+
+  #######################
+  # Load the error code #
+  #######################
+  ERROR_CODE=$?
+
+  ##########################
+  # Check the shell return #
+  ##########################
+  if [ $ERROR_CODE -ne 0 ]; then
+    echo "ERROR! Failed to gather data from GitHub!"
+    exit 1
+  fi
+
+  # Get the next page and end cursor
+  NEXT_PAGE=$(echo "$DATA_BLOCK" | jq .[] | jq -r '.organization.repositories.pageInfo.hasNextPage')
+  DESTINATION_END_CURSOR=$(echo "$DATA_BLOCK" | jq .[] | jq -r '.organization.repositories.pageInfo.endCursor')
+
+  # Debug info
+  Debug "DATA_BLOCK: ${DATA_BLOCK}"
+  Debug "NEXT_PAGE: ${NEXT_PAGE}"
+  Debug "DESTINATION_END_CURSOR: ${DESTINATION_END_CURSOR}"
+
+  #############################################
+  # Parse all the repo data out of data block #
+  #############################################
+  ParseDestinationRepoData "$DATA_BLOCK"
+
+  ########################################
+  # See if we need to loop for more data #
+  ########################################
+  if [ "$NEXT_PAGE" == "false" ]; then
+    # We have all the data, we can move on
+    echo "Gathered all data from source GitHub Organization"
+  elif [ "$NEXT_PAGE" == "true" ]; then
+    # We need to loop through GitHub to get all repos
+    echo "More pages of repos... Looping through data with new cursor:[$DESTINATION_END_CURSOR]"
+    ######################################
+    # Call GetData again with new cursor #
+    ######################################
+    GetAllDestinationRepos
+  else
+    # Failing to get this value means we didnt get a good response back from GitHub
+    # And it could be bad input from user, not enough access, or a bad token
+    # Fail out and have user validate the info
+    echo ""
+    echo "######################################################"
+    echo "ERROR! Failed response back from GitHub!"
+    echo "Please validate your PAT, Organization, and access levels!"
+    echo "######################################################"
+    exit 1
+  fi
+}
+################################################################################
+#### Function ParseDestinationRepoData #########################################
+ParseDestinationRepoData() {
+  # Pull in the repos data block
+  PARSE_DATA=$1
+  # Convert the format to JSON
+  _jq() {
+    echo -n "${PARSE_DATA}" | base64 --decode | jq -r "${1}"
+  }
+
+  REPOS=$(echo "${PARSE_DATA}" | jq -r '.data.organization.repositories.nodes')
+  for REPO_DATA in $(echo -n "${REPOS}" | jq -r '.[] | @base64'); do
+    _jq() {
+    echo -n "${REPO_DATA}" | base64 --decode | jq -r "${1}"
+    }
+    # Build out the vars for the function
+    REPO_NAME=$(_jq '.nameWithOwner' | tr '[:upper:]' '[:lower:]')
+    VISIBILITY=$(_jq '.visibility')
+    TEMPLATE=$(_jq '.isTemplate')
+    # Debug info
+    Debug "Repo Name: ${REPO_NAME}"
+    Debug "Visibility: ${VISIBILITY}"
+    Debug "Template: ${TEMPLATE}"
+    # Push the vars to the DESTINATION_REPO_ARRAY
+    DESTINATION_REPO_ARRAY+=("${REPO_NAME}|${VISIBILITY}|${TEMPLATE}")
+  done
 }
 ################################################################################
 #### Function ValidateArgs #####################################################
@@ -360,6 +443,37 @@ ValidateArgs() {
       exit 1
     fi
   fi
+}
+################################################################################
+#### Function GenerateUpdateList ###############################################
+GenerateUpdateList() {
+  # We now have all the data we need to generate the update list
+  # SOURCE_REPO_ARRAY=()      # Array of source repo names
+  # DESTINATION_REPO_ARRAY=() # Array of destination repo names
+  # UPDATE_REPO_ARRAY=()      # Array of repo names to update
+
+  # Loop through the destination repos and see if we have a match in the source repos
+  for DESTINATION_REPO in "${DESTINATION_REPO_ARRAY[@]}"; do
+    # Split the repo name and visibility
+    DESTINATION_REPO_NAME=$(echo "${DESTINATION_REPO}" | cut -d'|' -f1)
+    DESTINATION_REPO_VISIBILITY=$(echo "${DESTINATION_REPO}" | cut -d'|' -f2)
+    DESTINATION_REPO_TEMPLATE=$(echo "${DESTINATION_REPO}" | cut -d'|' -f3)
+    # Loop through the source repos and see if we have a match
+    for SOURCE_REPO in "${SOURCE_REPO_ARRAY[@]}"; do
+      # Split the repo name and visibility
+      SOURCE_REPO_NAME=$(echo "${SOURCE_REPO}" | cut -d'|' -f1)
+      SOURCE_REPO_VISIBILITY=$(echo "${SOURCE_REPO}" | cut -d'|' -f2)
+      SOURCE_REPO_TEMPLATE=$(echo "${SOURCE_REPO}" | cut -d'|' -f3)
+      # Check if the repo names match
+      if [ "${SOURCE_REPO_NAME}" == "${DESTINATION_REPO_NAME}" ]; then
+        # We have a match, update the UPDATE_REPO_ARRAY with the SOURCE_REPO_VISIBILITY and SOURCE_REPO_TEMPLATE
+        UPDATE_REPO_ARRAY+=("${DESTINATION_REPO_NAME}|${SOURCE_REPO_VISIBILITY}|${SOURCE_REPO_TEMPLATE}")
+      fi
+    done
+  done
+
+  # Debug info
+  Debug "UPDATE_REPO_ARRAY: ${UPDATE_REPO_ARRAY[@]}"
 }
 ################################################################################
 ############################## MAIN ############################################
@@ -406,8 +520,8 @@ else
   #########################################
   # Get the list of all repos in the orgs #
   #########################################
-  GetAllSourceRepos "${SOURCE_ORG_NAME}"
-  GetAllDestinationRepos "${DESTINATION_ORG_NAME}"
+  GetAllSourceRepos
+  GetAllDestinationRepos
   ###############################################################
   # Loop through the repos and generate list of repos to update #
   ###############################################################
