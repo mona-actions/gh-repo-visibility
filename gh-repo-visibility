@@ -158,23 +158,15 @@ Header() {
   echo "######################################################"
   echo ""
 
-  ###########################################
-  # Make lower case to prevent weird issues #
-  ###########################################
-  DESTINATION_ORG_NAME=$(echo "${DESTINATION_ORG_NAME}" | tr '[:upper:]' '[:lower:]')
-  SOURCE_ORG_NAME=$(echo "${SOURCE_ORG_NAME}" | tr '[:upper:]' '[:lower:]')
-
-  # Print the organizations being synced if debug
-  echo "Syncing ${SOURCE_ORG_NAME} repository visibility to ${DESTINATION_ORG_NAME}"
-  echo ""
-
   # Debug info
-  Debug "Source Token: ${SOURCE_TOKEN}"
-  Debug "Destination Token: ${DESTINATION_TOKEN}"
-  Debug "Source Organization: ${SOURCE_ORG_NAME}"
-  Debug "Destination Organization: ${DESTINATION_ORG_NAME}"
-  Debug "Repo Page Size: ${REPO_PAGE_SIZE}"
-  Debug "Input File: ${INPUT_FILE_NAME}"
+  Debug "---- DEBUG ----"
+  Debug "Source Token:[${SOURCE_TOKEN}]"
+  Debug "Destination Token:[${DESTINATION_TOKEN}]"
+  Debug "Source Organization:[${SOURCE_ORG_NAME}]"
+  Debug "Destination Organization:[${DESTINATION_ORG_NAME}]"
+  Debug "Repo Page Size:[${REPO_PAGE_SIZE}]"
+  Debug "Input File:[${INPUT_FILE_NAME}]"
+  Debug "---- DEBUG ----"
 }
 ################################################################################
 #### Function Footer ###########################################################
@@ -214,12 +206,12 @@ UpdateRepoVisibility() {
   TEMPLATE="$4"
 
   echo "----------------------------------------------------"
-  echo "Updating visibility of ${ORG_NAME}/${REPO_NAME} to ${VISIBILITY}"
-  echo "Setting Template to ${TEMPLATE}"
+  echo "Updating visibility of:[${ORG_NAME}/${REPO_NAME}] to visibility:[${VISIBILITY}] and template:[${TEMPLATE}]"
   # Call the GitHub API to update the visibility of the repo
   UPDATE_CMD=$(curl --fail -s -X PATCH \
+    -H "Accept: application/vnd.github.v3+json" \
     -H "Authorization: token ${DESTINATION_TOKEN}" \
-    -d "{\"visibility\": \"${VISIBILITY}\", \"isTemplate\": \"${TEMPLATE}\"}" \
+    -d "{\"visibility\": \"${VISIBILITY}\", \"isTemplate\": ${TEMPLATE}}" \
     "https://api.github.com/repos/${ORG_NAME}/${REPO_NAME}" 2>&1)
   
   #######################
@@ -232,17 +224,31 @@ UpdateRepoVisibility() {
   ##########################
   if [ $ERROR_CODE -ne 0 ]; then
     echo "ERROR! Failed to update data from GitHub!"
+    echo "ERROR_CODE:[${ERROR_CODE}]"
     echo "ERROR:[${UPDATE_CMD}]"
     exit 1
   else
     echo "Successfully updated data on GitHub!"
+    echo "----------------------------------------------------"
   fi
 }
 ################################################################################
 #### Function GetAllSourceRepos ################################################
 GetAllSourceRepos() {
-  Debug "Getting all source repos for ${ORG_NAME}"
-  Debug "SOURCE_END_CURSOR: ${SOURCE_END_CURSOR}"
+  echo "Getting all source repos for:[${SOURCE_ORG_NAME}]"
+  Debug "SOURCE_END_CURSOR:[${SOURCE_END_CURSOR}]"
+
+  # Need to quote the string if its not null
+  SOURCE_END_CURSOR_STRING="${SOURCE_END_CURSOR}"
+  if [[ "${SOURCE_END_CURSOR}" != "null" ]]; then
+    SOURCE_END_CURSOR_STRING='\"'
+    SOURCE_END_CURSOR_STRING+="${SOURCE_END_CURSOR}"
+    SOURCE_END_CURSOR_STRING+='\"'
+  fi
+  # Need to quote the string
+  SOURCE_ORG_NAME_STRING='\"'
+  SOURCE_ORG_NAME_STRING+="${SOURCE_ORG_NAME}"
+  SOURCE_ORG_NAME_STRING+='\"'
 
   # Get the data block from the GitHub API
   DATA_BLOCK=$(curl --fail -s -X POST \
@@ -250,7 +256,7 @@ GetAllSourceRepos() {
     -H 'Accept: application/vnd.github.starfire-preview+json' \
     -H "Authorization: Bearer ${SOURCE_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d "{\"query\":\"query {organization(login: \"${SOURCE_ORG_NAME}\") {repositories(first: ${REPO_PAGE_SIZE}, after: ${SOURCE_END_CURSOR}) {nodes {nameWithOwner visibility isTemplate}totalCount pageInfo {hasNextPage endCursor}}}}\"}" 2>&1)
+    -d "{\"query\":\"query {organization(login: ${SOURCE_ORG_NAME_STRING}) {repositories(first: ${REPO_PAGE_SIZE}, after: ${SOURCE_END_CURSOR_STRING}) {nodes {nameWithOwner visibility isTemplate}totalCount pageInfo {hasNextPage endCursor}}}}\"}" 2>&1)
 
   #######################
   # Load the error code #
@@ -270,9 +276,9 @@ GetAllSourceRepos() {
   SOURCE_END_CURSOR=$(echo "$DATA_BLOCK" | jq .[] | jq -r '.organization.repositories.pageInfo.endCursor')
 
   # Debug info
-  Debug "DATA_BLOCK: ${DATA_BLOCK}"
-  Debug "NEXT_PAGE: ${NEXT_PAGE}"
-  Debug "SOURCE_END_CURSOR: ${SOURCE_END_CURSOR}"
+  Debug "DATA_BLOCK:[${DATA_BLOCK}]"
+  Debug "NEXT_PAGE:[${NEXT_PAGE}]"
+  Debug "SOURCE_END_CURSOR:[${SOURCE_END_CURSOR}]"
 
   #############################################
   # Parse all the repo data out of data block #
@@ -285,6 +291,7 @@ GetAllSourceRepos() {
   if [ "$NEXT_PAGE" == "false" ]; then
     # We have all the data, we can move on
     echo "Gathered all data from source GitHub Organization"
+    echo "----------------------------------------------------"
   elif [ "$NEXT_PAGE" == "true" ]; then
     # We need to loop through GitHub to get all repos
     echo "More pages of repos... Looping through data with new cursor:[$SOURCE_END_CURSOR]"
@@ -324,9 +331,9 @@ ParseSourceRepoData() {
     VISIBILITY=$(_jq '.visibility')
     TEMPLATE=$(_jq '.isTemplate')
     # Debug info
-    Debug "Repo Name: ${REPO_NAME}"
-    Debug "Visibility: ${VISIBILITY}"
-    Debug "Template: ${TEMPLATE}"
+    Debug "Repo Name:[${REPO_NAME}]"
+    Debug "Visibility:[${VISIBILITY}]"
+    Debug "Template:[${TEMPLATE}]"
     # Push the vars to the SOURCE_REPO_ARRAY
     SOURCE_REPO_ARRAY+=("${REPO_NAME}|${VISIBILITY}|${TEMPLATE}")
   done
@@ -334,8 +341,20 @@ ParseSourceRepoData() {
 ################################################################################
 #### Function GetAllDestinationRepos ###########################################
 GetAllDestinationRepos() {
-  Debug "Getting all source repos for ${ORG_NAME}"
-  Debug "DESTINATION_END_CURSOR: ${DESTINATION_END_CURSOR}"
+  echo "Getting all destination repos for:[${DESTINATION_ORG_NAME}]"
+  Debug "DESTINATION_END_CURSOR:[${DESTINATION_END_CURSOR}]"
+
+  # Need to quote the string if its not null
+  DESTINATION_END_CURSOR_STRING="${DESTINATION_END_CURSOR}"
+  if [[ "${DESTINATION_END_CURSOR}" != "null" ]]; then
+    DESTINATION_END_CURSOR_STRING='\"'
+    DESTINATION_END_CURSOR_STRING+="${DESTINATION_END_CURSOR}"
+    DESTINATION_END_CURSOR_STRING+='\"'
+  fi
+  # Need to quote the string
+  DESTINATION_ORG_NAME_STRING='\"'
+  DESTINATION_ORG_NAME_STRING+="${DESTINATION_ORG_NAME}"
+  DESTINATION_ORG_NAME_STRING+='\"'
 
   # Get the data block from the GitHub API
   DATA_BLOCK=$(curl --fail -s -X POST \
@@ -343,7 +362,7 @@ GetAllDestinationRepos() {
     -H 'Accept: application/vnd.github.starfire-preview+json' \
     -H "Authorization: Bearer ${DESTINATION_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d "{\"query\":\"query {organization(login: \"${DESTINATION_ORG_NAME}\") {repositories(first: ${REPO_PAGE_SIZE}, after: ${DESTINATION_END_CURSOR}) {nodes {nameWithOwner visibility isTemplate}totalCount pageInfo {hasNextPage endCursor}}}}\"}" 2>&1)
+    -d "{\"query\":\"query {organization(login: ${DESTINATION_ORG_NAME_STRING}) {repositories(first: ${REPO_PAGE_SIZE}, after: ${DESTINATION_END_CURSOR_STRING}) {nodes {nameWithOwner visibility isTemplate}totalCount pageInfo {hasNextPage endCursor}}}}\"}" 2>&1)
 
   #######################
   # Load the error code #
@@ -363,9 +382,9 @@ GetAllDestinationRepos() {
   DESTINATION_END_CURSOR=$(echo "$DATA_BLOCK" | jq .[] | jq -r '.organization.repositories.pageInfo.endCursor')
 
   # Debug info
-  Debug "DATA_BLOCK: ${DATA_BLOCK}"
-  Debug "NEXT_PAGE: ${NEXT_PAGE}"
-  Debug "DESTINATION_END_CURSOR: ${DESTINATION_END_CURSOR}"
+  Debug "DATA_BLOCK:[${DATA_BLOCK}]"
+  Debug "NEXT_PAGE:[${NEXT_PAGE}]"
+  Debug "DESTINATION_END_CURSOR:[${DESTINATION_END_CURSOR}]"
 
   #############################################
   # Parse all the repo data out of data block #
@@ -377,7 +396,8 @@ GetAllDestinationRepos() {
   ########################################
   if [ "$NEXT_PAGE" == "false" ]; then
     # We have all the data, we can move on
-    echo "Gathered all data from source GitHub Organization"
+    echo "Gathered all data from destination GitHub Organization"
+    echo "----------------------------------------------------"
   elif [ "$NEXT_PAGE" == "true" ]; then
     # We need to loop through GitHub to get all repos
     echo "More pages of repos... Looping through data with new cursor:[$DESTINATION_END_CURSOR]"
@@ -428,18 +448,24 @@ ParseDestinationRepoData() {
 #### Function ValidateArgs #####################################################
 ValidateArgs() {
   # Check if user has provided the required arguments
+  echo "----------------------------------------------------"
+  echo "Validating user input..."
+
   # Check if user has passed input file
-  if [ -n "${INPUT_FILE}" ]; then
-    # user passed input file, need to see if we have destination token
-    if [ -z "${DESTINATION_TOKEN}" ]; then
-      # user did not pass destination token, fail out
-      echo "ERROR! You must provide a destination token to update the Destination Organization!"
-      exit 1
-    fi
-  else
+  if [ -n "${INPUT_FILE_NAME}" ] || [ "${#INPUT_FILE_NAME}" -lt 1 ] && [ -z "${DESTINATION_TOKEN}" ]; then
+    # user did not pass destination token, fail out
+    echo "ERROR! You must provide a destination token to update the Destination Organization!"
+    exit 1
+  fi
+
+  # Check we have all other vars if no input file
+  if [ -z "${INPUT_FILE_NAME}" ]; then
+    # Make lower case to prevent weird issues
+    DESTINATION_ORG_NAME=$(echo "${DESTINATION_ORG_NAME}" | tr '[:upper:]' '[:lower:]')
+    SOURCE_ORG_NAME=$(echo "${SOURCE_ORG_NAME}" | tr '[:upper:]' '[:lower:]')
     # We need both source and org vars
     if [ -z "${SOURCE_ORG_NAME}" ] || [ -z "${SOURCE_TOKEN}" ] || [ -z "${DESTINATION_ORG_NAME}" ] || [ -z "${DESTINATION_TOKEN}" ]; then
-      echo "ERROR! You must provide [--destination-token --source-token --destination-org --source-org] to query and update!"
+      echo "ERROR! You must provide [--destination-token] [--source-token] [--destination-org] [--source-org] to query and update!"
       exit 1
     fi
   fi
@@ -447,25 +473,35 @@ ValidateArgs() {
 ################################################################################
 #### Function GenerateUpdateList ###############################################
 GenerateUpdateList() {
+  echo "----------------------------------------------------"
+  echo "Parsing all data and generating update list..."
   # We now have all the data we need to generate the update list
   # SOURCE_REPO_ARRAY=()      # Array of source repo names
   # DESTINATION_REPO_ARRAY=() # Array of destination repo names
   # UPDATE_REPO_ARRAY=()      # Array of repo names to update
+  #
+  # String format per item is:
+  # <org name>/<repo name>|<visibility>|<template>
 
   # Loop through the destination repos and see if we have a match in the source repos
   for DESTINATION_REPO in "${DESTINATION_REPO_ARRAY[@]}"; do
     # Split the repo name and visibility
-    DESTINATION_REPO_NAME=$(echo "${DESTINATION_REPO}" | cut -d'|' -f1)
+    DESTINATION_REPO_STRING=$(echo "${DESTINATION_REPO}" | cut -d'|' -f1)
+    DESTINATION_ORG=$(echo "${DESTINATION_REPO_STRING}" | cut -d'/' -f1)
+    DESTINATION_REPO=$(echo "${DESTINATION_REPO_STRING}" | cut -d'/' -f2)
     # Loop through the source repos and see if we have a match
     for SOURCE_REPO in "${SOURCE_REPO_ARRAY[@]}"; do
       # Split the repo name and visibility
-      SOURCE_REPO_NAME=$(echo "${SOURCE_REPO}" | cut -d'|' -f1)
+      SOURCE_REPO_STRING=$(echo "${SOURCE_REPO}" | cut -d'|' -f1)
+      SOURCE_ORG=$(echo "${SOURCE_REPO_STRING}" | cut -d'/' -f1)
+      SOURCE_REPO=$(echo "${SOURCE_REPO_STRING}" | cut -d'/' -f2)
       SOURCE_REPO_VISIBILITY=$(echo "${SOURCE_REPO}" | cut -d'|' -f2)
       SOURCE_REPO_TEMPLATE=$(echo "${SOURCE_REPO}" | cut -d'|' -f3)
       # Check if the repo names match
-      if [ "${SOURCE_REPO_NAME}" == "${DESTINATION_REPO_NAME}" ]; then
+      if [ "${SOURCE_REPO}" == "${DESTINATION_REPO}" ]; then
         # We have a match, update the UPDATE_REPO_ARRAY with the SOURCE_REPO_VISIBILITY and SOURCE_REPO_TEMPLATE
-        UPDATE_REPO_ARRAY+=("${DESTINATION_REPO_NAME}|${SOURCE_REPO_VISIBILITY}|${SOURCE_REPO_TEMPLATE}")
+        UPDATE_REPO_ARRAY+=("${DESTINATION_ORG}/${DESTINATION_REPO}|${SOURCE_REPO_VISIBILITY}|${SOURCE_REPO_TEMPLATE}")
+        echo "Adding:[${DESTINATION_ORG}/${DESTINATION_REPO}|${SOURCE_REPO_VISIBILITY}|${SOURCE_REPO_TEMPLATE}] to update array"
       fi
     done
   done
@@ -501,13 +537,21 @@ if [[ -n "${INPUT_FILE_NAME}" ]]; then
     #############################################
     # Split the line into the org and repo name #
     #############################################
-    DESTINATION_ORG_NAME=$(echo "${line}" | cut -d'/' -f1)
-    DESTINATION_REPO_NAME=$(echo "${line}" | cut -d'/' -f2)
-    VISIBILITY=$(echo "${line}" | cut -d',' -f3)
-    TEMPLATE=$(echo "${line}" | cut -d',' -f4)
-    if [ -z "${TEMPLATE}" ]; then
+    DESTINATION_ORG_NAME=$(echo "${line}" | cut -d'/' -f1 | tr '[:upper:]' '[:lower:]')
+    DESTINATION_REPO_NAME=$(echo "${line}" | cut -d'/' -f2 | cut -d',' -f1| tr '[:upper:]' '[:lower:]')
+    VISIBILITY=$(echo "${line}" | cut -d',' -f2 | tr '[:upper:]' '[:lower:]')
+    TEMPLATE=$(echo "${line}" | cut -d',' -f3 | tr '[:upper:]' '[:lower:]')
+    if [ -z "${TEMPLATE}" ] || [ "${#TEMPLATE}" -lt 1 ]; then
       TEMPLATE="false"
     fi
+
+    # Debug info
+    Debug "---- DEBUG ----"
+    Debug "DESTINATION_ORG_NAME:[${DESTINATION_ORG_NAME}]"
+    Debug "DESTINATION_REPO_NAME:[${DESTINATION_REPO_NAME}]"
+    Debug "VISIBILITY:[${VISIBILITY}]"
+    Debug "TEMPLATE:[${TEMPLATE}]"
+    Debug "---- DEBUG ----"
 
     #####################################
     # Update the visibility of the repo #
@@ -526,13 +570,17 @@ else
   GenerateUpdateList
   # Loop through the list of repos and update the visibility
   for OBJECT in "${UPDATE_REPO_ARRAY[@]}"; do
+    Debug "---- DEBUG ----"
+    Debug "OBJECT:[${OBJECT}]"
+    Debug "---- DEBUG ----"
     # Get the vars from the string
-    DESTINATION_ORG_NAME=$(echo "${OBJECT}" | cut -d'/' -f1)
-    DESTINATION_REPO_NAME=$(echo "${OBJECT}" | cut -d'/' -f2)
-    VISIBILITY=$(echo "${OBJECT}" | cut -d',' -f3)
-    TEMPLATE=$(echo "${OBJECT}" | cut -d',' -f4)
+    ORG_REPO=$(echo "${OBJECT}" | cut -d'|' -f1)
+    ORG=$(echo "${ORG_REPO}" | cut -d'/' -f1)
+    REPO=$(echo "${ORG_REPO}" | cut -d'|' -f2)
+    VISIBILITY=$(echo "${OBJECT}" | cut -d'|' -f3)
+    TEMPLATE=$(echo "${OBJECT}" | cut -d'|' -f4)
     # run the update
-    UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}" "${TEMPLATE}"
+    UpdateRepoVisibility "${ORG}" "${REPO}" "${VISIBILITY}" "${TEMPLATE}"
   done
 fi
 
