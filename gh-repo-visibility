@@ -111,7 +111,8 @@ eval set -- "$PARAMS"
 # Defaults #
 ############
 REPO_PAGE_SIZE="${REPO_PAGE_SIZE:-100}" # Default to 100 if not passed
-
+SOURCE_END_CURSOR='null'                # Set to null, will be updated after call
+DESTINATION_END_CURSOR='null'           # Set to null, will be updated after call
 ###########
 # GLOBALS #
 ###########
@@ -210,6 +211,97 @@ UpdateRepoVisibility() {
 GetAllSourceRepos() {
    # Pull in vars from the function call
   ORG_NAME="$1"
+
+  Debug "Getting all source repos for ${ORG_NAME}"
+  Debug "SOURCE_END_CURSOR: ${SOURCE_END_CURSOR}"
+
+  # Get the data block from the GitHub API
+  DATA_BLOCK=$(curl --fail -s -X POST \
+    --url https://api.github.com/graphql \
+    -H 'Accept: application/vnd.github.starfire-preview+json' \
+    -H "Authorization: Bearer ${SOURCE_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"query\":\"query {organization(login: \"${SOURCE_ORG_NAME}\") {repositories(first: ${REPO_PAGE_SIZE}, after: ${SOURCE_END_CURSOR}) {nodes {name visibility isTemplate}totalCount pageInfo {hasNextPage endCursor}}}}\"}" 2>&1)
+  
+
+  #######################
+  # Load the error code #
+  #######################
+  ERROR_CODE=$?
+
+  ##########################
+  # Check the shell return #
+  ##########################
+  if [ $ERROR_CODE -ne 0 ]; then
+    echo "ERROR! Failed to gather data from GitHub!"
+    exit 1
+  fi
+
+  # Get the next page and end cursor
+  NEXT_PAGE=$(echo "$DATA_BLOCK" | jq .[] | jq -r '.organization.repositories.pageInfo.hasNextPage')
+  SOURCE_END_CURSOR=$(echo "$DATA_BLOCK" | jq .[] | jq -r '.organization.repositories.pageInfo.endCursor')
+
+  # Debug info
+  Debug "DATA_BLOCK: ${DATA_BLOCK}"
+  Debug "NEXT_PAGE: ${NEXT_PAGE}"
+  Debug "SOURCE_END_CURSOR: ${SOURCE_END_CURSOR}"
+
+  #############################################
+  # Parse all the repo data out of data block #
+  #############################################
+  ParseSourceRepoData "$DATA_BLOCK"
+
+  ########################################
+  # See if we need to loop for more data #
+  ########################################
+  if [ "$NEXT_PAGE" == "false" ]; then
+    # We have all the data, we can move on
+    echo "Gathered all data from source GitHub Organization"
+  elif [ "$NEXT_PAGE" == "true" ]; then
+    # We need to loop through GitHub to get all repos
+    echo "More pages of repos... Looping through data with new cursor:[$SOURCE_END_CURSOR]"
+    ######################################
+    # Call GetData again with new cursor #
+    ######################################
+    GetAllSourceRepos
+  else
+    # Failing to get this value means we didnt get a good response back from GitHub
+    # And it could be bad input from user, not enough access, or a bad token
+    # Fail out and have user validate the info
+    echo ""
+    echo "######################################################"
+    echo "ERROR! Failed response back from GitHub!"
+    echo "Please validate your PAT, Organization, and access levels!"
+    echo "######################################################"
+    exit 1
+  fi
+}
+################################################################################
+#### Function ParseSourceRepoData ##############################################
+ParseSourceRepoData() {
+  # Pull in the repos data block
+  PARSE_DATA=$1
+  # Convert the format to JSON
+  _jq() {
+    echo -n "${PARSE_DATA}" | base64 --decode | jq -r "${1}"
+  }
+
+  REPOS=$(echo "${PARSE_DATA}" | jq -r '.data.organization.repositories.nodes')
+  for REPO_DATA in $(echo -n "${REPOS}" | jq -r '.[] | @base64'); do
+    _jq() {
+    echo -n "${REPO_DATA}" | base64 --decode | jq -r "${1}"
+    }
+    # Build out the vars for the function
+    REPO_NAME=$(_jq '.name' | tr '[:upper:]' '[:lower:]')
+    VISIBILITY=$(_jq '.visibility')
+    TEMPLATE==$(_jq '.isTemplate')
+    # Debug info
+    Debug "Repo Name: ${REPO_NAME}"
+    Debug "Visibility: ${VISIBILITY}"
+    Debug "Template: ${TEMPLATE}"
+    # Push the vars to the SOURCE_REPO_ARRAY
+    SOURCE_REPO_ARRAY+=("${REPO_NAME}|${VISIBILITY}|${TEMPLATE}")
+  done
 }
 ################################################################################
 #### Function GetAllDestinationRepos ###########################################
