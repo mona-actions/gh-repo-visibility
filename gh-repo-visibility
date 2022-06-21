@@ -222,14 +222,17 @@ UpdateRepoVisibility() {
   ##########################
   # Check the shell return #
   ##########################
-  if [ $ERROR_CODE -ne 0 ]; then
+  if [ ${ERROR_CODE} -eq 422 ] || [ ${ERROR_CODE} -eq 22 ]; then
+    echo "Data was not updated, it was already up to date"
+    echo "----------------------------------------------------"
+  elif [ ${ERROR_CODE} -eq 0 ]; then
+    echo "Successfully updated data on GitHub!"
+    echo "----------------------------------------------------"
+  else
     echo "ERROR! Failed to update data from GitHub!"
     echo "ERROR_CODE:[${ERROR_CODE}]"
     echo "ERROR:[${UPDATE_CMD}]"
     exit 1
-  else
-    echo "Successfully updated data on GitHub!"
-    echo "----------------------------------------------------"
   fi
 }
 ################################################################################
@@ -328,8 +331,8 @@ ParseSourceRepoData() {
     }
     # Build out the vars for the function
     REPO_NAME=$(_jq '.nameWithOwner' | tr '[:upper:]' '[:lower:]')
-    VISIBILITY=$(_jq '.visibility')
-    TEMPLATE=$(_jq '.isTemplate')
+    VISIBILITY=$(_jq '.visibility' | tr '[:upper:]' '[:lower:]')
+    TEMPLATE=$(_jq '.isTemplate' | tr '[:upper:]' '[:lower:]')
     # Debug info
     Debug "Repo Name:[${REPO_NAME}]"
     Debug "Visibility:[${VISIBILITY}]"
@@ -434,12 +437,12 @@ ParseDestinationRepoData() {
     }
     # Build out the vars for the function
     REPO_NAME=$(_jq '.nameWithOwner' | tr '[:upper:]' '[:lower:]')
-    VISIBILITY=$(_jq '.visibility')
-    TEMPLATE=$(_jq '.isTemplate')
+    VISIBILITY=$(_jq '.visibility' | tr '[:upper:]' '[:lower:]')
+    TEMPLATE=$(_jq '.isTemplate' | tr '[:upper:]' '[:lower:]')
     # Debug info
-    Debug "Repo Name: ${REPO_NAME}"
-    Debug "Visibility: ${VISIBILITY}"
-    Debug "Template: ${TEMPLATE}"
+    Debug "Repo Name:[${REPO_NAME}]"
+    Debug "Visibility:[${VISIBILITY}]"
+    Debug "Template:[${TEMPLATE}]"
     # Push the vars to the DESTINATION_REPO_ARRAY
     DESTINATION_REPO_ARRAY+=("${REPO_NAME}|${VISIBILITY}|${TEMPLATE}")
   done
@@ -484,19 +487,30 @@ GenerateUpdateList() {
   # <org name>/<repo name>|<visibility>|<template>
 
   # Loop through the destination repos and see if we have a match in the source repos
-  for DESTINATION_REPO in "${DESTINATION_REPO_ARRAY[@]}"; do
+  for DESTINATION_OBJECT in "${DESTINATION_REPO_ARRAY[@]}"; do
     # Split the repo name and visibility
-    DESTINATION_REPO_STRING=$(echo "${DESTINATION_REPO}" | cut -d'|' -f1)
+    DESTINATION_REPO_STRING=$(echo "${DESTINATION_OBJECT}" | cut -d'|' -f1)
     DESTINATION_ORG=$(echo "${DESTINATION_REPO_STRING}" | cut -d'/' -f1)
     DESTINATION_REPO=$(echo "${DESTINATION_REPO_STRING}" | cut -d'/' -f2)
+    # Debug Info
+    Debug "DESTINATION_REPO_STRING:[${DESTINATION_REPO_STRING}]"
+    Debug "DESTINATION_ORG:[${DESTINATION_ORG}]"
+    Debug "DESTINATION_REPO:[${DESTINATION_REPO}]"
     # Loop through the source repos and see if we have a match
-    for SOURCE_REPO in "${SOURCE_REPO_ARRAY[@]}"; do
+    for SOURCE_OBJECT in "${SOURCE_REPO_ARRAY[@]}"; do
       # Split the repo name and visibility
-      SOURCE_REPO_STRING=$(echo "${SOURCE_REPO}" | cut -d'|' -f1)
+      SOURCE_REPO_STRING=$(echo "${SOURCE_OBJECT}" | cut -d'|' -f1)
       SOURCE_ORG=$(echo "${SOURCE_REPO_STRING}" | cut -d'/' -f1)
       SOURCE_REPO=$(echo "${SOURCE_REPO_STRING}" | cut -d'/' -f2)
-      SOURCE_REPO_VISIBILITY=$(echo "${SOURCE_REPO}" | cut -d'|' -f2)
-      SOURCE_REPO_TEMPLATE=$(echo "${SOURCE_REPO}" | cut -d'|' -f3)
+      SOURCE_REPO_VISIBILITY=$(echo "${SOURCE_OBJECT}" | cut -d'|' -f2)
+      SOURCE_REPO_TEMPLATE=$(echo "${SOURCE_OBJECT}" | cut -d'|' -f3)
+      # Debug Info
+      Debug "SOURCE_OBJECT:[${SOURCE_OBJECT}]"
+      Debug "SOURCE_REPO_STRING:[${SOURCE_REPO_STRING}]"
+      Debug "SOURCE_ORG:[${SOURCE_ORG}]"
+      Debug "SOURCE_REPO:[${SOURCE_REPO}]"
+      Debug "SOURCE_REPO_VISIBILITY:[${SOURCE_REPO_VISIBILITY}]"
+      Debug "SOURCE_REPO_TEMPLATE:[${SOURCE_REPO_TEMPLATE}]"
       # Check if the repo names match
       if [ "${SOURCE_REPO}" == "${DESTINATION_REPO}" ]; then
         # We have a match, update the UPDATE_REPO_ARRAY with the SOURCE_REPO_VISIBILITY and SOURCE_REPO_TEMPLATE
@@ -507,7 +521,11 @@ GenerateUpdateList() {
   done
 
   # Debug info
-  Debug "UPDATE_REPO_ARRAY: ${UPDATE_REPO_ARRAY[*]}"
+  Debug "---- DEBUG ----"
+  Debug "UPDATE_REPO_ARRAY:"
+  for LINE in  "${UPDATE_REPO_ARRAY[@]}"; do
+    Debug "${LINE}"
+  done
 }
 ################################################################################
 ############################## MAIN ############################################
@@ -570,15 +588,21 @@ else
   GenerateUpdateList
   # Loop through the list of repos and update the visibility
   for OBJECT in "${UPDATE_REPO_ARRAY[@]}"; do
-    Debug "---- DEBUG ----"
-    Debug "OBJECT:[${OBJECT}]"
-    Debug "---- DEBUG ----"
     # Get the vars from the string
     ORG_REPO=$(echo "${OBJECT}" | cut -d'|' -f1)
     ORG=$(echo "${ORG_REPO}" | cut -d'/' -f1)
-    REPO=$(echo "${ORG_REPO}" | cut -d'|' -f2)
-    VISIBILITY=$(echo "${OBJECT}" | cut -d'|' -f3)
-    TEMPLATE=$(echo "${OBJECT}" | cut -d'|' -f4)
+    REPO=$(echo "${ORG_REPO}" | cut -d'/' -f2)
+    VISIBILITY=$(echo "${OBJECT}" | cut -d'|' -f2)
+    TEMPLATE=$(echo "${OBJECT}" | cut -d'|' -f3)
+    # Debug info
+    Debug "---- DEBUG ----"
+    Debug "OBJECT:[${OBJECT}]"
+    Debug "ORG_REPO:[${ORG_REPO}]"
+    Debug "ORG:[${ORG}]"
+    Debug "REPO:[${REPO}]"
+    Debug "VISIBILITY:[${VISIBILITY}]"
+    Debug "TEMPLATE:[${TEMPLATE}]"
+    Debug "---- DEBUG ----"
     # run the update
     UpdateRepoVisibility "${ORG}" "${REPO}" "${VISIBILITY}" "${TEMPLATE}"
   done
