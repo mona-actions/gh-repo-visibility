@@ -19,7 +19,14 @@
 # - jq installed on the machine running the query
 #
 # NOTES:
+# Input file should be in the format:
+# Org_Name/Repo_Name1,public,false
+# Org_Name/Repo_Name2,internal,false
+# Org_Name/Repo_Name3,private,true
 #
+# It can handle multiple organizations and repositories.
+# The last field in the input file is the isTemplate and is a boolean true or false.
+# The script will still run if completly missing the isTemplate field.
 
 ################################################################################
 #### Function PrintUsage #######################################################
@@ -31,7 +38,7 @@ Usage: gh repo-visibility [options]
 Options:
     -h, --help                    : Show script help
     -d, --debug                   : Enable Debug logging
-    -i, --input                   : Set path to a file with a list of Org/Repo,visibility to update, one per line
+    -i, --input                   : Set path to a file with a list of Org/Repo,visibility,template to update, one per line
     -dt, --destination-token      :  Set Personal Access Token with repo scope to destination Organization
     -st, --source-token           : Set Personal Access Token with repo scope to original Organization
     -p, --repo-page-size          : Set the pagination size for the initial repository GraphQL query - defaults to 20
@@ -204,7 +211,32 @@ UpdateRepoVisibility() {
   ORG_NAME="$1"
   REPO_NAME="$2"
   VISIBILITY="$3"
+  TEMPLATE="$4"
 
+  echo "----------------------------------------------------"
+  echo "Updating visibility of ${ORG_NAME}/${REPO_NAME} to ${VISIBILITY}"
+  echo "Setting Template to ${TEMPLATE}"
+  # Call the GitHub API to update the visibility of the repo
+  UPDATE_CMD=$(curl --fail -s -X PATCH \
+    -H "Authorization: token ${DESTINATION_TOKEN}" \
+    -d "{\"visibility\": \"${VISIBILITY}\", \"isTemplate\": \"${TEMPLATE}\"}" \
+    https://api.github.com/repos/${ORG_NAME}/${REPO_NAME} 2>&1)
+  
+  #######################
+  # Load the error code #
+  #######################
+  ERROR_CODE=$?
+
+  ##########################
+  # Check the shell return #
+  ##########################
+  if [ $ERROR_CODE -ne 0 ]; then
+    echo "ERROR! Failed to update data from GitHub!"
+    echo "ERROR:[${UPDATE_CMD}]"
+    exit 1
+  else
+    echo "Successfully updated data on GitHub!"
+  fi
 }
 ################################################################################
 #### Function GetAllSourceRepos ################################################
@@ -221,7 +253,7 @@ GetAllSourceRepos() {
     -H 'Accept: application/vnd.github.starfire-preview+json' \
     -H "Authorization: Bearer ${SOURCE_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d "{\"query\":\"query {organization(login: \"${SOURCE_ORG_NAME}\") {repositories(first: ${REPO_PAGE_SIZE}, after: ${SOURCE_END_CURSOR}) {nodes {name visibility isTemplate}totalCount pageInfo {hasNextPage endCursor}}}}\"}" 2>&1)
+    -d "{\"query\":\"query {organization(login: \"${SOURCE_ORG_NAME}\") {repositories(first: ${REPO_PAGE_SIZE}, after: ${SOURCE_END_CURSOR}) {nodes {nameWithOwner visibility isTemplate}totalCount pageInfo {hasNextPage endCursor}}}}\"}" 2>&1)
   
 
   #######################
@@ -292,7 +324,7 @@ ParseSourceRepoData() {
     echo -n "${REPO_DATA}" | base64 --decode | jq -r "${1}"
     }
     # Build out the vars for the function
-    REPO_NAME=$(_jq '.name' | tr '[:upper:]' '[:lower:]')
+    REPO_NAME=$(_jq '.nameWithOwner' | tr '[:upper:]' '[:lower:]')
     VISIBILITY=$(_jq '.visibility')
     TEMPLATE==$(_jq '.isTemplate')
     # Debug info
@@ -310,6 +342,26 @@ GetAllDestinationRepos() {
   ORG_NAME="$1"
 }
 ################################################################################
+#### Function ValidateArgs #####################################################
+ValidateArgs() {
+  # Check if user has provided the required arguments
+  # Check if user has passed input file
+  if [ -n "${INPUT_FILE}" ]; then
+    # user passed input file, need to see if we have destination token
+    if [ -z "${DESTINATION_TOKEN}" ]; then
+      # user did not pass destination token, fail out
+      echo "ERROR! You must provide a destination token to update the Destination Organization!"
+      exit 1
+    fi
+  else
+    # We need both source and org vars
+    if [ -z "${SOURCE_ORG_NAME}" ] || [ -z "${SOURCE_TOKEN}"] || [ -z "${DESTINATION_ORG_NAME}"] || [ -z "${DESTINATION_TOKEN}"]; then
+      echo "ERROR! You must provide [--destination-token --source-token --destination-org --source-org] to query and update!"
+      exit 1
+    fi
+  fi
+}
+################################################################################
 ############################## MAIN ############################################
 ################################################################################
 
@@ -317,6 +369,11 @@ GetAllDestinationRepos() {
 # Header #
 ##########
 Header
+
+#####################################
+# Validate we have enough arguments #
+#####################################
+ValidateArgs
 
 #########################
 # Validate JQ installed #
@@ -335,11 +392,15 @@ if [[ -n "${INPUT_FILE_NAME}" ]]; then
     DESTINATION_ORG_NAME=$(echo "${line}" | cut -d'/' -f1)
     DESTINATION_REPO_NAME=$(echo "${line}" | cut -d'/' -f2)
     VISIBILITY=$(echo "${line}" | cut -d',' -f3)
+    TEMPLATE=$(echo "${line}" | cut -d',' -f4)
+    if [ -z "${TEMPLATE}" ]; then
+      TEMPLATE="false"
+    fi
 
     #####################################
     # Update the visibility of the repo #
     #####################################
-    UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}"
+    UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}" "${TEMPLATE}"
   done < "${INPUT_FILE_NAME}"
 else
   #########################################
@@ -357,8 +418,9 @@ else
     DESTINATION_ORG_NAME=$(echo "${OBJECT}" | cut -d'/' -f1)
     DESTINATION_REPO_NAME=$(echo "${OBJECT}" | cut -d'/' -f2)
     VISIBILITY=$(echo "${OBJECT}" | cut -d',' -f3)
+    TEMPLATE=$(echo "${OBJECT}" | cut -d',' -f4)
     # run the update
-    UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}"
+    UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}" "${TEMPLATE}"
   done
 fi
 
