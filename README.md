@@ -1,15 +1,17 @@
 # gh-repo-visibility
 
-This script is used by the gh command line to help sync or update the visibility of repositories. If no input file is provided, it will sync the visibility of all repositories. 
+This script is used by the `gh` command-line to help sync or update the **visibility** of repositories. If no input file is provided, it will sync the **visibility** of all repositories found in the destination *Organization* from the *Source* Organization.
 
-If an input file is provided, it will update the visibility of all repositories in the input file.
+If an input file is provided, it will update the **visibility** of all repositories in the input file.
+
+**Note:** The tool will also sync the `isTemplate` property of repositories. as well.
 
 ## PREREQS
 
 You need to have the following to run this script successfully:
-- GitHub Personal Access Token with a scope of "repos" and access to the organization(s) that will be updated.
+- **GitHub Personal Access Token** with a scope of "repos" and access to the organization(s) that will be updated.
 - Either the name of the organizations to be synced, or a file containing the names of the repositories to be updated
-- jq installed on the machine running the query
+- **jq** installed on the machine running the query
 
 ## Input file
 
@@ -73,4 +75,4 @@ The script has completed
 ### Limitations
 
 - The tool currently is only setup to work on `https://github.com`
-- The tool currently scans all repositories in the source organization and destination organization using graphql. This could prove to use many of your api rate limit on much larger Organizations
+- The tool currently scans all repositories in the source organization and destination organization using GraphQL. This could prove to use many of your API rate limit on *much larger* Organizations
