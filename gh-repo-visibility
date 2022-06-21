@@ -220,7 +220,7 @@ UpdateRepoVisibility() {
   UPDATE_CMD=$(curl --fail -s -X PATCH \
     -H "Authorization: token ${DESTINATION_TOKEN}" \
     -d "{\"visibility\": \"${VISIBILITY}\", \"isTemplate\": \"${TEMPLATE}\"}" \
-    https://api.github.com/repos/${ORG_NAME}/${REPO_NAME} 2>&1)
+    "https://api.github.com/repos/${ORG_NAME}/${REPO_NAME}" 2>&1)
   
   #######################
   # Load the error code #
@@ -456,8 +456,6 @@ GenerateUpdateList() {
   for DESTINATION_REPO in "${DESTINATION_REPO_ARRAY[@]}"; do
     # Split the repo name and visibility
     DESTINATION_REPO_NAME=$(echo "${DESTINATION_REPO}" | cut -d'|' -f1)
-    DESTINATION_REPO_VISIBILITY=$(echo "${DESTINATION_REPO}" | cut -d'|' -f2)
-    DESTINATION_REPO_TEMPLATE=$(echo "${DESTINATION_REPO}" | cut -d'|' -f3)
     # Loop through the source repos and see if we have a match
     for SOURCE_REPO in "${SOURCE_REPO_ARRAY[@]}"; do
       # Split the repo name and visibility
@@ -473,7 +471,7 @@ GenerateUpdateList() {
   done
 
   # Debug info
-  Debug "UPDATE_REPO_ARRAY: ${UPDATE_REPO_ARRAY[@]}"
+  Debug "UPDATE_REPO_ARRAY: ${UPDATE_REPO_ARRAY[*]}"
 }
 ################################################################################
 ############################## MAIN ############################################
