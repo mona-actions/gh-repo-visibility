@@ -326,7 +326,7 @@ ParseSourceRepoData() {
     # Build out the vars for the function
     REPO_NAME=$(_jq '.nameWithOwner' | tr '[:upper:]' '[:lower:]')
     VISIBILITY=$(_jq '.visibility')
-    TEMPLATE==$(_jq '.isTemplate')
+    TEMPLATE=$(_jq '.isTemplate')
     # Debug info
     Debug "Repo Name: ${REPO_NAME}"
     Debug "Visibility: ${VISIBILITY}"
@@ -355,7 +355,7 @@ ValidateArgs() {
     fi
   else
     # We need both source and org vars
-    if [ -z "${SOURCE_ORG_NAME}" ] || [ -z "${SOURCE_TOKEN}"] || [ -z "${DESTINATION_ORG_NAME}"] || [ -z "${DESTINATION_TOKEN}"]; then
+    if [ -z "${SOURCE_ORG_NAME}" ] || [ -z "${SOURCE_TOKEN}" ] || [ -z "${DESTINATION_ORG_NAME}" ] || [ -z "${DESTINATION_TOKEN}" ]; then
       echo "ERROR! You must provide [--destination-token --source-token --destination-org --source-org] to query and update!"
       exit 1
     fi
