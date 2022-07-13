@@ -673,8 +673,6 @@ ParseInputFile() {
 ################################################################################
 #### Function ParseUpdateArray #################################################
 ParseUpdateArray() {
-  # Get the count of objects in the array
-  ARRAY_OBJECTS="${#UPDATE_REPO_ARRAY[@]}"
   # Check api limit
   CheckAPILimit
   # Ser var for API limit used
