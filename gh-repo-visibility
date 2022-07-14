@@ -134,7 +134,6 @@ REPOS_PARSED=0                    # Number of repos parsed from the input file
 REPOS_UPDATED=0                   # Number of repos updated
 REPOS_FAILED=0                    # Number of repos that failed to update
 API_REMAINING_SOURCE=0            # Number of API calls remaining
-API_LIMIT_REMAINING_SOURCE=0      # Number of API calls remaining before we hit the limit
 API_REMAINING_DESTINATION=0       # Number of API calls remaining
 API_LIMIT_REMAINING_DESTINATION=0 # Number of API calls remaining before we hit the limit
 
@@ -337,12 +336,8 @@ CheckAPILimitSource() {
     fi
   elif [[ "${API_REMAINING_SOURCE}" == 9999999999 ]]; then
     echo "API rate limiting is not enabled."
-    # Set API limit remaining to the value we have
-    API_LIMIT_REMAINING_SOURCE="${API_REMAINING_SOURCE}"
   else
     echo "[${API_REMAINING_SOURCE}] Source API attempts remaining..."
-    # Set API limit remaining to the value we have
-    API_LIMIT_REMAINING_SOURCE="${API_REMAINING_SOURCE}"
   fi
 }
 ################################################################################
