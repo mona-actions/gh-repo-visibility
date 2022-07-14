@@ -123,18 +123,19 @@ DESTINATION_END_CURSOR='null'           # Set to null, will be updated after cal
 SLEEP='300'                             # Number of seconds to sleep if out of API calls
 SLEEP_RETRY_COUNT='15'                  # Number of times to try to sleep before giving up
 SLEEP_COUNTER='0'                       # Counter of how many times we have gone to sleep
-GITHUB_URL='https://api.github.com'     # Base URL for the GitHub API
+GITHUB_API_URL='https://api.github.com' # Base URL for the GitHub API
 ###########
 # GLOBALS #
 ###########
-SOURCE_REPO_ARRAY=()      # Array of source repo names
-DESTINATION_REPO_ARRAY=() # Array of destination repo names
-UPDATE_REPO_ARRAY=()      # Array of repo names to update
-REPOS_PARSED=0            # Number of repos parsed from the input file
-REPOS_UPDATED=0           # Number of repos updated
-REPOS_FAILED=0            # Number of repos that failed to update
-API_REMAINING=0           # Number of API calls remaining
-API_LIMIT_REMAINING=0     # Number of API calls remaining before we hit the limit
+SOURCE_REPO_ARRAY=()              # Array of source repo names
+DESTINATION_REPO_ARRAY=()         # Array of destination repo names
+UPDATE_REPO_ARRAY=()              # Array of repo names to update
+REPOS_PARSED=0                    # Number of repos parsed from the input file
+REPOS_UPDATED=0                   # Number of repos updated
+REPOS_FAILED=0                    # Number of repos that failed to update
+API_REMAINING_SOURCE=0            # Number of API calls remaining
+API_REMAINING_DESTINATION=0       # Number of API calls remaining
+API_LIMIT_REMAINING_DESTINATION=0 # Number of API calls remaining before we hit the limit
 
 ################################################################################
 ############################ FUNCTIONS #########################################
@@ -210,14 +211,14 @@ ValidateJQ() {
   fi
 }
 ################################################################################
-#### Function CheckAPILimit ####################################################
-CheckAPILimit() {
+#### Function CheckAPILimitDestination #########################################
+CheckAPILimitDestination() {
   ##############################################################
   # Check what is remaining, and if 0, we need to sleep it off #
   ##############################################################
   API_REMAINING_REQUEST=$(curl -s -X GET \
-    --url "${GITHUB_URL}/rate_limit" \
-    -H "Authorization: Bearer ${GITHUB_TOKEN}")
+    --url "${GITHUB_API_URL}/rate_limit" \
+    -H "Authorization: Bearer ${DESTINATION_TOKEN}")
 
   Debug "DEBUG --- API REMAINING DATA BLOCK:"
   DebugJQ "${API_REMAINING_REQUEST}"
@@ -226,10 +227,10 @@ CheckAPILimit() {
     | jq -r '.message' 2>&1)
 
   if [[ "${API_REMAINING_MESSAGE}" != "Rate limiting is not enabled." ]]; then
-    API_REMAINING=$(echo "${API_REMAINING_REQUEST}" \
+    API_REMAINING_DESTINATION=$(echo "${API_REMAINING_REQUEST}" \
       | jq -r '.resources.graphql.remaining' 2>&1);
   else
-    API_REMAINING=9999999999
+    API_REMAINING_DESTINATION=9999999999
   fi
 
   #######################
@@ -242,14 +243,14 @@ CheckAPILimit() {
   ##############################
   if [ "${ERROR_CODE}" -ne 0 ]; then
     echo  "ERROR! Failed to get valid response back from GitHub API!"
-    echo "ERROR:[${API_REMAINING}]"
+    echo "ERROR:[${API_REMAINING_DESTINATION}]"
     exit 1
   fi
 
   ##########################################
   # Check to see if we have API calls left #
   ##########################################
-  if [[ "${API_REMAINING}" -eq 0 ]]; then
+  if [[ "${API_REMAINING_DESTINATION}" -eq 0 ]]; then
     # Increment the sleep counter
     ((SLEEP_COUNTER++))
     # Warn the user
@@ -266,14 +267,77 @@ CheckAPILimit() {
       # Get some sleep...
       sleep "${SLEEP}"
     fi
-  elif [[ "${API_REMAINING}" == 9999999999 ]]; then
+  elif [[ "${API_REMAINING_DESTINATION}" == 9999999999 ]]; then
     echo "API rate limiting is not enabled."
     # Set API limit remaining to the value we have
-    API_LIMIT_REMAINING="${API_REMAINING}"
+    API_LIMIT_REMAINING_DESTINATION="${API_REMAINING_DESTINATION}"
   else
-    echo "[${API_REMAINING}] API attempts remaining..."
+    echo "[${API_REMAINING_DESTINATION}] Destination API attempts remaining..."
     # Set API limit remaining to the value we have
-    API_LIMIT_REMAINING="${API_REMAINING}"
+    API_LIMIT_REMAINING_DESTINATION="${API_REMAINING_DESTINATION}"
+  fi
+}
+################################################################################
+#### Function CheckAPILimitSource ##############################################
+CheckAPILimitSource() {
+  ##############################################################
+  # Check what is remaining, and if 0, we need to sleep it off #
+  ##############################################################
+  API_REMAINING_REQUEST=$(curl -s -X GET \
+    --url "${GITHUB_API_URL}/rate_limit" \
+    -H "Authorization: Bearer ${SOURCE_TOKEN}")
+
+  Debug "DEBUG --- API REMAINING DATA BLOCK:"
+  DebugJQ "${API_REMAINING_REQUEST}"
+
+  API_REMAINING_MESSAGE=$(echo "${API_REMAINING_REQUEST}" \
+    | jq -r '.message' 2>&1)
+
+  if [[ "${API_REMAINING_MESSAGE}" != "Rate limiting is not enabled." ]]; then
+    API_REMAINING_SOURCE=$(echo "${API_REMAINING_REQUEST}" \
+      | jq -r '.resources.graphql.remaining' 2>&1);
+  else
+    API_REMAINING_SOURCE=9999999999
+  fi
+
+  #######################
+  # Load the error code #
+  #######################
+  ERROR_CODE=$?
+
+  ##############################
+  # Check the shell for errors #
+  ##############################
+  if [ "${ERROR_CODE}" -ne 0 ]; then
+    echo  "ERROR! Failed to get valid response back from GitHub API!"
+    echo "ERROR:[${API_REMAINING_SOURCE}]"
+    exit 1
+  fi
+
+  ##########################################
+  # Check to see if we have API calls left #
+  ##########################################
+  if [[ "${API_REMAINING_SOURCE}" -eq 0 ]]; then
+    # Increment the sleep counter
+    ((SLEEP_COUNTER++))
+    # Warn the user
+    echo "WARN! We have run out of GrahpQL calls and need to sleep!"
+    echo "Sleeping for ${SLEEP} seconds before next check"
+    # Check if we have slept enough
+    if [ "${SLEEP_COUNTER}" -gt "${SLEEP_RETRY_COUNT}" ]; then
+      # We have been doing this too long
+      echo "ERROR! We have tried to wait for:[$SLEEP_RETRY_COUNT] attempts!"
+      echo "ERROR! We only sleep for:[${SLEEP_COUNTER}] attempts!"
+      echo "Bailing out!"
+      exit 1
+    else
+      # Get some sleep...
+      sleep "${SLEEP}"
+    fi
+  elif [[ "${API_REMAINING_SOURCE}" == 9999999999 ]]; then
+    echo "API rate limiting is not enabled."
+  else
+    echo "[${API_REMAINING_SOURCE}] Source API attempts remaining..."
   fi
 }
 ################################################################################
@@ -307,11 +371,15 @@ UpdateRepoVisibility() {
     echo "----------------------------------------------------"
     # Update the counters
     REPOS_UPDATED=$((REPOS_UPDATED+1))
+    # Decrement the API limit remaining
+    ((API_LIMIT_REMAINING_DESTINATION--))
   elif [ ${ERROR_CODE} -eq 0 ]; then
     echo "Successfully updated data on GitHub!"
     echo "----------------------------------------------------"
     # Update the counters
     REPOS_UPDATED=$((REPOS_UPDATED+1))
+    # Decrement the API limit remaining
+    ((API_LIMIT_REMAINING_DESTINATION--))
   else
     echo "ERROR! Failed to update data from GitHub!"
     echo "ERROR_CODE:[${ERROR_CODE}]"
@@ -371,7 +439,7 @@ GetAllSourceRepos() {
   #############################################
   # Check the API limit remaining for GraphQL #
   #############################################
-  CheckAPILimit
+  CheckAPILimitSource
 
   #############################################
   # Parse all the repo data out of data block #
@@ -484,7 +552,7 @@ GetAllDestinationRepos() {
   #############################################
   # Check the API limit remaining for GraphQL #
   #############################################
-  CheckAPILimit
+  CheckAPILimitDestination
 
   #############################################
   # Parse all the repo data out of data block #
@@ -634,11 +702,11 @@ ParseInputFile() {
   # Debug info
   Debug "LINES in input file:[${LINES}]"
   # Check api limit
-  CheckAPILimit
+  CheckAPILimitDestination
   # Check if we have api limit higher than lines in file
-  if [ "${LINES}" -gt "${API_LIMIT}" ]; then
+  if [ "${LINES}" -gt "${API_LIMIT_REMAINING_DESTINATION}" ]; then
     # We have more lines than the api limit, fail out
-    echo "ERROR! You have provided a file with more lines than the API limit of:[${API_LIMIT}]!"
+    echo "ERROR! You have provided a file with more lines than the API limit of:[${API_LIMIT_REMAINING_DESTINATION}]!"
     echo "Please reduce the number of lines in the file, increase the API limit, or wait for api limit to reset!"
     exit 1
   fi
@@ -674,15 +742,13 @@ ParseInputFile() {
 #### Function ParseUpdateArray #################################################
 ParseUpdateArray() {
   # Check api limit
-  CheckAPILimit
-  # Ser var for API limit used
-  API_LIMIT_REMAINING="${API_REMAINING}"
+  CheckAPILimitDestination
   # Loop through the list of repos and update the visibility
   for OBJECT in "${UPDATE_REPO_ARRAY[@]}"; do
     # Check api limit remainging
-    if [ "${API_LIMIT_REMAINING}" -lt 1 ]; then
+    if [ "${API_LIMIT_REMAINING_DESTINATION}" -lt 1 ]; then
       # Check api limit
-      CheckAPILimit
+      CheckAPILimitDestination
     fi
     # Get the vars from the string
     ORG_REPO=$(echo "${OBJECT}" | cut -d'|' -f1)
@@ -702,7 +768,7 @@ ParseUpdateArray() {
     # run the update
     UpdateRepoVisibility "${ORG}" "${REPO}" "${VISIBILITY}" "${TEMPLATE}"
     # Decrement the API limit remaining
-    API_LIMIT_REMAINING=$((API_LIMIT_REMAINING-1))
+    API_LIMIT_REMAINING_DESTINATION=$((API_LIMIT_REMAINING_DESTINATION-1))
   done
 }
 ################################################################################
