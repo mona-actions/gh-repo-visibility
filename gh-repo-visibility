@@ -711,9 +711,9 @@ GenerateUpdateList() {
   done
 
   # Add all the repos to the list file for easier parsing
-  echo "Repos to update:" >> "${LIST_FILE_NAME}"
+  echo "Repos to update:" >> "${LIST_INFO_FILE}"
   for LINE in "${UPDATE_REPO_ARRAY[@]}"; do
-    echo "${LINE}" >> "${LIST_FILE_NAME}"
+    echo "${LINE}" >> "${LIST_INFO_FILE}"
   done
 }
 ################################################################################
