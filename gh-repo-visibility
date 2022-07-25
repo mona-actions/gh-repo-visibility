@@ -124,6 +124,11 @@ SLEEP='300'                             # Number of seconds to sleep if out of A
 SLEEP_RETRY_COUNT='15'                  # Number of times to try to sleep before giving up
 SLEEP_COUNTER='0'                       # Counter of how many times we have gone to sleep
 GITHUB_API_URL='https://api.github.com' # Base URL for the GitHub API
+LOG_DIR="$(pwd)"                        # Set to default log directory
+EPOCH_TIME=$(date +%s)                  # Set to current epoch time
+LOG_FILE="${LOG_DIR}/gh-repo-visibility-${EPOCH_TIME}.log" # Set to default log file name
+LIST_INFO_FILE="${LOG_DIR}/gh-repo-visibility-${EPOCH_TIME}.list" # List of repo info
+
 ###########
 # GLOBALS #
 ###########
@@ -166,6 +171,9 @@ Header() {
   echo "########## GitHub repo visibility updater ############"
   echo "######################################################"
   echo "######################################################"
+  echo ""
+  echo "Logs will be written to:[${LOG_FILE}]"
+  echo "Repos information will be written to:[${LIST_INFO_FILE}]"
   echo ""
 
   # Debug info
@@ -373,6 +381,8 @@ UpdateRepoVisibility() {
     REPOS_UPDATED=$((REPOS_UPDATED+1))
     # Decrement the API limit remaining
     ((API_LIMIT_REMAINING_DESTINATION--))
+    # Echo the information to the log file
+    echo "Success: Repo:[${ORG_NAME}/${REPO_NAME}] was already up to date" >> "${LOG_FILE}"
   elif [ ${ERROR_CODE} -eq 0 ]; then
     echo "Successfully updated data on GitHub!"
     echo "----------------------------------------------------"
@@ -380,12 +390,18 @@ UpdateRepoVisibility() {
     REPOS_UPDATED=$((REPOS_UPDATED+1))
     # Decrement the API limit remaining
     ((API_LIMIT_REMAINING_DESTINATION--))
+    # Echo the information to the log file
+    echo "Success: Repo:[${ORG_NAME}/${REPO_NAME}] was updated to visibility:[${VISIBILITY}] and template:[${TEMPLATE}]" >> "${LOG_FILE}"
   else
     echo "ERROR! Failed to update data from GitHub!"
     echo "ERROR_CODE:[${ERROR_CODE}]"
     echo "ERROR:[${UPDATE_CMD}]"
     # Update the counters
     REPOS_FAILED=$((REPOS_FAILED+1))
+    # Decrement the API limit remaining
+    ((API_LIMIT_REMAINING_DESTINATION--))
+    # Echo the information to the log file
+    echo "ERROR: Repo:[${ORG_NAME}/${REPO_NAME}] failed to update to visibility:[${VISIBILITY}] and template:[${TEMPLATE}]" >> "${LOG_FILE}"
   fi
 }
 ################################################################################
@@ -692,6 +708,12 @@ GenerateUpdateList() {
   Debug "UPDATE_REPO_ARRAY:"
   for LINE in  "${UPDATE_REPO_ARRAY[@]}"; do
     Debug "${LINE}"
+  done
+
+  # Add all the repos to the list file for easier parsing
+  echo "Repos to update:" >> "${LIST_FILE_NAME}"
+  for LINE in "${UPDATE_REPO_ARRAY[@]}"; do
+    echo "${LINE}" >> "${LIST_FILE_NAME}"
   done
 }
 ################################################################################
