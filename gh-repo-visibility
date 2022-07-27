@@ -141,6 +141,8 @@ REPOS_FAILED=0                    # Number of repos that failed to update
 API_REMAINING_SOURCE=0            # Number of API calls remaining
 API_REMAINING_DESTINATION=0       # Number of API calls remaining
 API_LIMIT_REMAINING_DESTINATION=0 # Number of API calls remaining before we hit the limit
+PARALLEL=0                        # If we can run in parallel
+MAX_PARALLEL=6                    # Maximum number of parallel processes to run
 
 ################################################################################
 ############################ FUNCTIONS #########################################
@@ -203,6 +205,23 @@ Footer() {
   echo ""
 }
 ################################################################################
+#### Function ValidateSem ######################################################
+ValidateSem() {
+  # Need to validate the machine has sem installed as we use it to do the
+  #  actual work.
+  if ! sem --version &>/dev/null
+  then
+    echo "Failed to find GNU sem in the path!"
+    echo "https://www.gnu.org/software/parallel/"
+    echo "This can be used to parallel the calls to the GitHub API."
+    echo "without sem, we will have to do it serially."
+  else
+    PARALLEL=1
+    # Create the file to run the parallel calls
+    CreateParallelFile
+  fi
+}
+################################################################################
 #### Function ValidateJQ #######################################################
 ValidateJQ() {
   # Need to validate the machine has jq installed as we use it to do the parsing
@@ -217,6 +236,68 @@ ValidateJQ() {
     echo "Once installed, please run this script again."
     exit 1
   fi
+}
+################################################################################
+#### Function CreateParallelFile ###############################################
+CreateParallelFile() {
+  # Create the file to run the parallel calls
+  cat >"${LOG_DIR}/gh-repo-visibility-parallel.sh" <<EOL
+#!/bin/bash
+ 
+ORG_NAME="$1"
+REPO_NAME="$2"
+VISIBILITY="$3"
+TEMPLATE="$4"
+LOG_FILE="$5"
+DESTINATION_TOKEN="$6"
+
+echo "----------------------------------------------------"
+echo "Updating visibility of:[${ORG_NAME}/${REPO_NAME}] to visibility:[${VISIBILITY}] and template:[${TEMPLATE}]"
+# Call the GitHub API to update the visibility of the repo
+UPDATE_CMD=$(curl --fail -s -X PATCH \
+  -H "Accept: application/vnd.github.v3+json" \
+  -H "Authorization: token ${DESTINATION_TOKEN}" \
+  -d "{\"visibility\": \"${VISIBILITY}\", \"isTemplate\": ${TEMPLATE}}" \
+  "https://api.github.com/repos/${ORG_NAME}/${REPO_NAME}" 2>&1)
+
+#######################
+# Load the error code #
+#######################
+ERROR_CODE=$?
+
+##########################
+# Check the shell return #
+##########################
+if [ ${ERROR_CODE} -eq 422 ] || [ ${ERROR_CODE} -eq 22 ]; then
+  echo "Data was not updated, it was already up to date"
+  echo "----------------------------------------------------"
+  # Update the counters
+  REPOS_UPDATED=$((REPOS_UPDATED+1))
+  # Decrement the API limit remaining
+  ((API_LIMIT_REMAINING_DESTINATION--))
+  # Echo the information to the log file
+  echo "Success: Repo:[${ORG_NAME}/${REPO_NAME}] was already up to date" >> "${LOG_FILE}"
+elif [ ${ERROR_CODE} -eq 0 ]; then
+  echo "Successfully updated data on GitHub!"
+  echo "----------------------------------------------------"
+  # Update the counters
+  REPOS_UPDATED=$((REPOS_UPDATED+1))
+  # Decrement the API limit remaining
+  ((API_LIMIT_REMAINING_DESTINATION--))
+  # Echo the information to the log file
+  echo "Success: Repo:[${ORG_NAME}/${REPO_NAME}] was updated to visibility:[${VISIBILITY}] and template:[${TEMPLATE}]" >> "${LOG_FILE}"
+else
+  echo "ERROR! Failed to update data from GitHub!"
+  echo "ERROR_CODE:[${ERROR_CODE}]"
+  echo "ERROR:[${UPDATE_CMD}]"
+  # Update the counters
+  REPOS_FAILED=$((REPOS_FAILED+1))
+  # Decrement the API limit remaining
+  ((API_LIMIT_REMAINING_DESTINATION--))
+  # Echo the information to the log file
+  echo "ERROR: Repo:[${ORG_NAME}/${REPO_NAME}] failed to update to visibility:[${VISIBILITY}] and template:[${TEMPLATE}]" >> "${LOG_FILE}"
+fi
+EOL
 }
 ################################################################################
 #### Function CheckAPILimitDestination #########################################
@@ -811,6 +892,11 @@ ValidateArgs
 # Validate JQ installed #
 #########################
 ValidateJQ
+
+#############################################
+# Validate if sem is installed for parallel #
+#############################################
+ValidateSem
 
 #####################################
 # Check if were using an input file #
