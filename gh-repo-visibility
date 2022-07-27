@@ -298,6 +298,9 @@ else
   echo "ERROR: Repo:[${ORG_NAME}/${REPO_NAME}] failed to update to visibility:[${VISIBILITY}] and template:[${TEMPLATE}]" >> "${LOG_FILE}"
 fi
 EOL
+
+  # Make the file executable
+  chmod +x "${LOG_DIR}/gh-repo-visibility-parallel.sh"
 }
 ################################################################################
 #### Function CheckAPILimitDestination #########################################
@@ -837,7 +840,7 @@ ParseInputFile() {
     
     # Check if parallel is enabled
     if [ "${PARALLEL}" -eq 1 ]; then
-      sem -j${MAX_PARALLEL} UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}" "${TEMPLATE}" "${LOG_FILE}" "${DESTINATION_TOKEN}"
+      sem -j${MAX_PARALLEL} "./${LOG_DIR}/gh-repo-visibility-parallel.sh" "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}" "${TEMPLATE}" "${LOG_FILE}" "${DESTINATION_TOKEN}"
     else
       #####################################
       # Update the visibility of the repo #
@@ -881,7 +884,7 @@ ParseUpdateArray() {
     Debug "---- DEBUG ----"
     # Check if parallel is enabled
     if [ "${PARALLEL}" -eq 1 ]; then
-      sem -j${MAX_PARALLEL} UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}" "${TEMPLATE}" "${LOG_FILE}" "${DESTINATION_TOKEN}"
+      sem -j${MAX_PARALLEL} "./${LOG_DIR}/gh-repo-visibility-parallel.sh" "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}" "${TEMPLATE}" "${LOG_FILE}" "${DESTINATION_TOKEN}"
     else
       #####################################
       # Update the visibility of the repo #
