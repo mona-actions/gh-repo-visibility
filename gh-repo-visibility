@@ -834,12 +834,23 @@ ParseInputFile() {
     Debug "VISIBILITY:[${VISIBILITY}]"
     Debug "TEMPLATE:[${TEMPLATE}]"
     Debug "---- DEBUG ----"
-
-    #####################################
-    # Update the visibility of the repo #
-    #####################################
-    UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}" "${TEMPLATE}"
+    
+    # Check if parallel is enabled
+    if [ "${PARALLEL}" -eq 1 ]; then
+      sem -j${MAX_PARALLEL} UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}" "${TEMPLATE}" "${LOG_FILE}" "${DESTINATION_TOKEN}"
+    else
+      #####################################
+      # Update the visibility of the repo #
+      #####################################
+      UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}" "${TEMPLATE}"
+    fi
   done < "${INPUT_FILE_NAME}"
+
+  # Wait for all the jobs to finish
+  if [ "${PARALLEL}" -eq 1 ]; then
+    # Wait for all the jobs to finish
+    sem --wait
+  fi
 }
 ################################################################################
 #### Function ParseUpdateArray #################################################
@@ -868,11 +879,24 @@ ParseUpdateArray() {
     Debug "VISIBILITY:[${VISIBILITY}]"
     Debug "TEMPLATE:[${TEMPLATE}]"
     Debug "---- DEBUG ----"
-    # run the update
-    UpdateRepoVisibility "${ORG}" "${REPO}" "${VISIBILITY}" "${TEMPLATE}"
+    # Check if parallel is enabled
+    if [ "${PARALLEL}" -eq 1 ]; then
+      sem -j${MAX_PARALLEL} UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}" "${TEMPLATE}" "${LOG_FILE}" "${DESTINATION_TOKEN}"
+    else
+      #####################################
+      # Update the visibility of the repo #
+      #####################################
+      UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}" "${TEMPLATE}"
+    fi
     # Decrement the API limit remaining
     API_LIMIT_REMAINING_DESTINATION=$((API_LIMIT_REMAINING_DESTINATION-1))
   done
+
+  # Wait for all the jobs to finish
+  if [ "${PARALLEL}" -eq 1 ]; then
+    # Wait for all the jobs to finish
+    sem --wait
+  fi
 }
 ################################################################################
 ############################## MAIN ############################################
