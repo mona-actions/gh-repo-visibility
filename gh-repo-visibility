@@ -26,8 +26,8 @@
 # Org_Name/Repo_Name3,private,true
 #
 # It can handle multiple organizations and repositories.
-# The last field in the input file is the isTemplate and is a boolean true or false.
-# The script will still run if completly missing the isTemplate field.
+# The last field in the input file is the is_template and is a boolean true or false.
+# The script will still run if completly missing the is_template field.
 
 ################################################################################
 #### Function PrintUsage #######################################################
@@ -255,21 +255,16 @@ DESTINATION_TOKEN="\$7"
 echo "----------------------------------------------------"
 echo "Updating visibility of:[\${ORG_NAME}/\${REPO_NAME}] to visibility:[\${VISIBILITY}] and template:[\${TEMPLATE}] and archived:[\${ARCHIVED}]"
 # Call the GitHub API to update the visibility of the repo
-UPDATE_CMD=$(curl --fail -s -X PATCH \
+UPDATE_CMD=$(curl --fail -s -o /dev/null -w "%{http_code}" -X PATCH \
   -H "Accept: application/vnd.github.v3+json" \
   -H "Authorization: token \${DESTINATION_TOKEN}" \
-  -d "{\"visibility\": \"\${VISIBILITY}\", \"isTemplate\": \${TEMPLATE}}, \"archived\": \${ARCHIVED}" \
+  -d "{\"visibility\": \"\${VISIBILITY}\", \"is_template\": \${TEMPLATE}, \"archived\": \${ARCHIVED}"} \
   "https://api.github.com/repos/\${ORG_NAME}/\${REPO_NAME}" 2>&1)
-
-#######################
-# Load the error code #
-#######################
-ERROR_CODE=\$?
 
 ##########################
 # Check the shell return #
 ##########################
-if [ \${ERROR_CODE} -eq 422 ] || [ \${ERROR_CODE} -eq 22 ]; then
+if [ \${UPDATE_CMD} -eq 422 ] || [ \${UPDATE_CMD} -eq 22 ]; then
   echo "Data was not updated, it was already up to date"
   echo "----------------------------------------------------"
   # Update the counters
@@ -278,7 +273,7 @@ if [ \${ERROR_CODE} -eq 422 ] || [ \${ERROR_CODE} -eq 22 ]; then
   ((API_LIMIT_REMAINING_DESTINATION--))
   # Echo the information to the log file
   echo "Success: Repo:[\${ORG_NAME}/\${REPO_NAME}] was already up to date" >> "\${LOG_FILE}"
-elif [ \${ERROR_CODE} -eq 0 ]; then
+elif [ \${UPDATE_CMD} -eq 0 ]; then
   echo "Successfully updated data on GitHub!"
   echo "----------------------------------------------------"
   # Update the counters
@@ -289,8 +284,7 @@ elif [ \${ERROR_CODE} -eq 0 ]; then
   echo "Success: Repo:[\${ORG_NAME}/\${REPO_NAME}] was updated to visibility:[\${VISIBILITY}] and template:[\${TEMPLATE}] and archived:[\${ARCHIVED}]" >> "\${LOG_FILE}"
 else
   echo "ERROR! Failed to update data from GitHub!"
-  echo "ERROR_CODE:[\${ERROR_CODE}]"
-  echo "ERROR:[\${UPDATE_CMD}]"
+  echo "ERROR_CODE:[\${UPDATE_CMD}]"
   # Update the counters
   REPOS_FAILED=$((REPOS_FAILED+1))
   # Decrement the API limit remaining
@@ -446,21 +440,17 @@ UpdateRepoVisibility() {
   echo "----------------------------------------------------"
   echo "Updating visibility of:[${ORG_NAME}/${REPO_NAME}] to visibility:[${VISIBILITY}] and template:[${TEMPLATE}] and archived:[${ARCHIVED}]"
   # Call the GitHub API to update the visibility of the repo
-  UPDATE_CMD=$(curl --fail -s -X PATCH \
+  UPDATE_CMD=$(curl --fail -s -o /dev/null -w "%{http_code}" -X PATCH \
     -H "Accept: application/vnd.github.v3+json" \
     -H "Authorization: token ${DESTINATION_TOKEN}" \
-    -d "{\"visibility\": \"${VISIBILITY}\", \"isTemplate\": ${TEMPLATE}}, \"archived\": ${ARCHIVED}" \
+    -d "{\"visibility\": \"${VISIBILITY}\", \"is_template\": ${TEMPLATE}, \"archived\": ${ARCHIVED}"} \
     "https://api.github.com/repos/${ORG_NAME}/${REPO_NAME}" 2>&1)
-  
-  #######################
-  # Load the error code #
-  #######################
-  ERROR_CODE=$?
+
 
   ##########################
   # Check the shell return #
   ##########################
-  if [ ${ERROR_CODE} -eq 422 ] || [ ${ERROR_CODE} -eq 22 ]; then
+  if [ ${UPDATE_CMD} -eq 422 ] || [ ${UPDATE_CMD} -eq 22 ]; then
     echo "Data was not updated, it was already up to date"
     echo "----------------------------------------------------"
     # Update the counters
@@ -469,7 +459,7 @@ UpdateRepoVisibility() {
     ((API_LIMIT_REMAINING_DESTINATION--))
     # Echo the information to the log file
     echo "Success: Repo:[${ORG_NAME}/${REPO_NAME}] was already up to date" >> "${LOG_FILE}"
-  elif [ ${ERROR_CODE} -eq 0 ]; then
+  elif [ ${UPDATE_CMD} -eq 0 ]; then
     echo "Successfully updated data on GitHub!"
     echo "----------------------------------------------------"
     # Update the counters
@@ -480,8 +470,7 @@ UpdateRepoVisibility() {
     echo "Success: Repo:[${ORG_NAME}/${REPO_NAME}] was updated to visibility:[${VISIBILITY}] and template:[${TEMPLATE}] and archived:[${ARCHIVED}]" >> "${LOG_FILE}"
   else
     echo "ERROR! Failed to update data from GitHub!"
-    echo "ERROR_CODE:[${ERROR_CODE}]"
-    echo "ERROR:[${UPDATE_CMD}]"
+    echo "ERROR_CODE:[${UPDATE_CMD}]"
     # Update the counters
     REPOS_FAILED=$((REPOS_FAILED+1))
     # Decrement the API limit remaining
@@ -514,7 +503,7 @@ GetAllSourceRepos() {
     -H 'Accept: application/vnd.github.starfire-preview+json' \
     -H "Authorization: Bearer ${SOURCE_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d "{\"query\":\"query {organization(login: ${SOURCE_ORG_NAME_STRING}) {repositories(first: ${REPO_PAGE_SIZE}, after: ${SOURCE_END_CURSOR_STRING}) {nodes {nameWithOwner visibility isTemplate isArchived}totalCount pageInfo {hasNextPage endCursor}}}}\"}" 2>&1)
+    -d "{\"query\":\"query {organization(login: ${SOURCE_ORG_NAME_STRING}) {repositories(first: ${REPO_PAGE_SIZE}, after: ${SOURCE_END_CURSOR_STRING}) {nodes {nameWithOwner visibility is_template isArchived}totalCount pageInfo {hasNextPage endCursor}}}}\"}" 2>&1)
 
   #######################
   # Load the error code #
@@ -592,7 +581,7 @@ ParseSourceRepoData() {
     # Build out the vars for the function
     REPO_NAME=$(_jq '.nameWithOwner' | tr '[:upper:]' '[:lower:]')
     VISIBILITY=$(_jq '.visibility' | tr '[:upper:]' '[:lower:]')
-    TEMPLATE=$(_jq '.isTemplate' | tr '[:upper:]' '[:lower:]')
+    TEMPLATE=$(_jq '.is_template' | tr '[:upper:]' '[:lower:]')
     ARCHIVED=$(_jq '.isArchived' | tr '[:upper:]' '[:lower:]')
     # Debug info
     Debug "Repo Name:[${REPO_NAME}]"
@@ -629,7 +618,7 @@ GetAllDestinationRepos() {
     -H 'Accept: application/vnd.github.starfire-preview+json' \
     -H "Authorization: Bearer ${DESTINATION_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d "{\"query\":\"query {organization(login: ${DESTINATION_ORG_NAME_STRING}) {repositories(first: ${REPO_PAGE_SIZE}, after: ${DESTINATION_END_CURSOR_STRING}) {nodes {nameWithOwner visibility isTemplate isArchived}totalCount pageInfo {hasNextPage endCursor}}}}\"}" 2>&1)
+    -d "{\"query\":\"query {organization(login: ${DESTINATION_ORG_NAME_STRING}) {repositories(first: ${REPO_PAGE_SIZE}, after: ${DESTINATION_END_CURSOR_STRING}) {nodes {nameWithOwner visibility is_template isArchived}totalCount pageInfo {hasNextPage endCursor}}}}\"}" 2>&1)
 
   #######################
   # Load the error code #
@@ -707,7 +696,7 @@ ParseDestinationRepoData() {
     # Build out the vars for the function
     REPO_NAME=$(_jq '.nameWithOwner' | tr '[:upper:]' '[:lower:]')
     VISIBILITY=$(_jq '.visibility' | tr '[:upper:]' '[:lower:]')
-    TEMPLATE=$(_jq '.isTemplate' | tr '[:upper:]' '[:lower:]')
+    TEMPLATE=$(_jq '.is_template' | tr '[:upper:]' '[:lower:]')
     ARCHIVED=$(_jq '.isArchived' | tr '[:upper:]' '[:lower:]')
     # Debug info
     Debug "Repo Name:[${REPO_NAME}]"
