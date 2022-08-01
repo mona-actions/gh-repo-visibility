@@ -258,7 +258,7 @@ echo "Updating visibility of:[\${ORG_NAME}/\${REPO_NAME}] to visibility:[\${VISI
 UPDATE_CMD=$(curl --fail -s -o /dev/null -w "%{http_code}" -X PATCH \
   -H "Accept: application/vnd.github.v3+json" \
   -H "Authorization: token \${DESTINATION_TOKEN}" \
-  -d "{\"visibility\": \"\${VISIBILITY}\", \"is_template\": \${TEMPLATE}, \"archived\": \${ARCHIVED}"} \
+  -d "{\"visibility\": \"\${VISIBILITY}\", \"is_template\": \${TEMPLATE}, \"archived\": \${ARCHIVED} }" \
   "https://api.github.com/repos/\${ORG_NAME}/\${REPO_NAME}" 2>&1)
 
 ##########################
@@ -443,14 +443,14 @@ UpdateRepoVisibility() {
   UPDATE_CMD=$(curl --fail -s -o /dev/null -w "%{http_code}" -X PATCH \
     -H "Accept: application/vnd.github.v3+json" \
     -H "Authorization: token ${DESTINATION_TOKEN}" \
-    -d "{\"visibility\": \"${VISIBILITY}\", \"is_template\": ${TEMPLATE}, \"archived\": ${ARCHIVED}"} \
+    -d "{\"visibility\": \"${VISIBILITY}\", \"is_template\": ${TEMPLATE}, \"archived\": ${ARCHIVED} }" \
     "https://api.github.com/repos/${ORG_NAME}/${REPO_NAME}" 2>&1)
 
 
   ##########################
   # Check the shell return #
   ##########################
-  if [ ${UPDATE_CMD} -eq 422 ] || [ ${UPDATE_CMD} -eq 22 ]; then
+  if [ "${UPDATE_CMD}" -eq 422 ] || [ "${UPDATE_CMD}" -eq 22 ]; then
     echo "Data was not updated, it was already up to date"
     echo "----------------------------------------------------"
     # Update the counters
@@ -459,7 +459,7 @@ UpdateRepoVisibility() {
     ((API_LIMIT_REMAINING_DESTINATION--))
     # Echo the information to the log file
     echo "Success: Repo:[${ORG_NAME}/${REPO_NAME}] was already up to date" >> "${LOG_FILE}"
-  elif [ ${UPDATE_CMD} -eq 0 ]; then
+  elif [ "${UPDATE_CMD}" -eq 0 ]; then
     echo "Successfully updated data on GitHub!"
     echo "----------------------------------------------------"
     # Update the counters
