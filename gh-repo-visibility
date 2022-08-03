@@ -720,7 +720,7 @@ ValidateArgs() {
   SOURCE_ORG_NAME=$(echo "${SOURCE_ORG_NAME}" | tr '[:upper:]' '[:lower:]')
 
   # Check if user has passed input file
-  if [ -n "${INPUT_FILE_NAME}" ] || [ "${#INPUT_FILE_NAME}" -lt 1 ] && [ -z "${DESTINATION_TOKEN}" ] && [ -z "${SOURCE_TOKEN}"]; then
+  if [ -n "${INPUT_FILE_NAME}" ] || [ "${#INPUT_FILE_NAME}" -lt 1 ] && [ -z "${DESTINATION_TOKEN}" ] && [ -z "${SOURCE_TOKEN}" ]; then
     # user did not pass destination token, fail out
     echo "ERROR! You must provide [--destination-token] [--source-token] [--destination-org] [--source-org] to query and update!"
     exit 1
