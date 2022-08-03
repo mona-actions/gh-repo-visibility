@@ -21,13 +21,12 @@
 #
 # NOTES:
 # Input file should be in the format:
-# Org_Name/Repo_Name1,public,false
-# Org_Name/Repo_Name2,internal,false
-# Org_Name/Repo_Name3,private,true
+# Repo_Name1
+# Repo_Name2
+# Repo_Name3
 #
-# It can handle multiple organizations and repositories.
-# The last field in the input file is the is_template and is a boolean true or false.
-# The script will still run if completly missing the is_template field.
+# The script will read the input file list of repositories and 
+# replicate the visibility, template status, and archive status of each repository.
 
 ################################################################################
 #### Function PrintUsage #######################################################
@@ -39,8 +38,8 @@ Usage: gh repo-visibility [options]
 Options:
     -h, --help                    : Show script help
     -d, --debug                   : Enable Debug logging
-    -i, --input                   : Set path to a file with a list of Org/Repo,visibility,template to update, one per line
-    -dt, --destination-token      :  Set Personal Access Token with repo scope to destination Organization
+    -i, --input                   : Set path to a file with a list of Repositories to update, one per line
+    -dt, --destination-token      : Set Personal Access Token with repo scope to destination Organization
     -st, --source-token           : Set Personal Access Token with repo scope to original Organization
     -p, --repo-page-size          : Set the pagination size for the initial repository GraphQL query - defaults to 20
                                     If a timeout occurs, reduce this value
@@ -716,18 +715,25 @@ ValidateArgs() {
   echo "----------------------------------------------------"
   echo "Validating user input..."
 
+  # Make lower case to prevent weird issues
+  DESTINATION_ORG_NAME=$(echo "${DESTINATION_ORG_NAME}" | tr '[:upper:]' '[:lower:]')
+  SOURCE_ORG_NAME=$(echo "${SOURCE_ORG_NAME}" | tr '[:upper:]' '[:lower:]')
+
   # Check if user has passed input file
-  if [ -n "${INPUT_FILE_NAME}" ] || [ "${#INPUT_FILE_NAME}" -lt 1 ] && [ -z "${DESTINATION_TOKEN}" ]; then
+  if [ -n "${INPUT_FILE_NAME}" ] || [ "${#INPUT_FILE_NAME}" -lt 1 ] && [ -z "${DESTINATION_TOKEN}" ] && [ -z "${SOURCE_TOKEN}" ]; then
     # user did not pass destination token, fail out
-    echo "ERROR! You must provide a destination token to update the Destination Organization!"
+    echo "ERROR! You must provide [--destination-token] [--source-token] [--destination-org] [--source-org] to query and update!"
     exit 1
+    # Check if we have a source and destination organization name
+    if [ -z "${DESTINATION_ORG_NAME}" ] || [ -z "${SOURCE_ORG_NAME}" ]; then
+      # user did not pass destination token, fail out
+      echo "ERROR! You must provide [--destination-token] [--source-token] [--destination-org] [--source-org] to query and update!"
+      exit 1
+    fi
   fi
 
   # Check we have all other vars if no input file
   if [ -z "${INPUT_FILE_NAME}" ]; then
-    # Make lower case to prevent weird issues
-    DESTINATION_ORG_NAME=$(echo "${DESTINATION_ORG_NAME}" | tr '[:upper:]' '[:lower:]')
-    SOURCE_ORG_NAME=$(echo "${SOURCE_ORG_NAME}" | tr '[:upper:]' '[:lower:]')
     # We need both source and org vars
     if [ -z "${SOURCE_ORG_NAME}" ] || [ -z "${SOURCE_TOKEN}" ] || [ -z "${DESTINATION_ORG_NAME}" ] || [ -z "${DESTINATION_TOKEN}" ]; then
       echo "ERROR! You must provide [--destination-token] [--source-token] [--destination-org] [--source-org] to query and update!"
@@ -815,49 +821,103 @@ ParseInputFile() {
   fi
 
   # Read in the input file and parse the lines
-  while read -r line; do
-    #############################################
-    # Split the line into the org and repo name #
-    #############################################
-    DESTINATION_ORG_NAME=$(echo "${line}" | cut -d'/' -f1 | tr '[:upper:]' '[:lower:]')
-    DESTINATION_REPO_NAME=$(echo "${line}" | cut -d'/' -f2 | cut -d',' -f1| tr '[:upper:]' '[:lower:]')
-    VISIBILITY=$(echo "${line}" | cut -d',' -f2 | tr '[:upper:]' '[:lower:]')
-    TEMPLATE=$(echo "${line}" | cut -d',' -f3 | tr '[:upper:]' '[:lower:]')
-    ARCHIVED=$(echo "${line}" | cut -d',' -f4 | tr '[:upper:]' '[:lower:]')
-    # Check if we got template
-    if [ -z "${TEMPLATE}" ] || [ "${#TEMPLATE}" -lt 1 ]; then
-      TEMPLATE="false"
-    fi
-    # Check if we got archived
-    if [ -z "${ARCHIVED}" ] || [ "${#ARCHIVED}" -lt 1 ]; then
-      ARCHIVED="false"
-    fi
-
-    # Debug info
-    Debug "---- DEBUG ----"
-    Debug "DESTINATION_ORG_NAME:[${DESTINATION_ORG_NAME}]"
-    Debug "DESTINATION_REPO_NAME:[${DESTINATION_REPO_NAME}]"
-    Debug "VISIBILITY:[${VISIBILITY}]"
-    Debug "TEMPLATE:[${TEMPLATE}]"
-    Debug "ARCHIVED:[${ARCHIVED}]"
-    Debug "---- DEBUG ----"
-    
-    # Check if parallel is enabled
-    if [ "${PARALLEL}" -eq 1 ]; then
-      sem -j${MAX_PARALLEL} "./gh-repo-visibility-parallel.sh" "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}" "${TEMPLATE}" "${ARCHIVED}" "${LOG_FILE}" "${DESTINATION_TOKEN}"
-    else
-      #####################################
-      # Update the visibility of the repo #
-      #####################################
-      UpdateRepoVisibility "${DESTINATION_ORG_NAME}" "${DESTINATION_REPO_NAME}" "${VISIBILITY}" "${TEMPLATE}" "${ARCHIVED}"
-    fi
+  while read -r LINE; do
+    # Get the repository name
+    REPO_NAME="${LINE}"
+    # Get the source repo info
+    GetSourceRepoInfo "${REPO_NAME}"
+    # Get the destination repo info
+    GetDestinationRepoInfo "${REPO_NAME}"
   done < "${INPUT_FILE_NAME}"
 
-  # Wait for all the jobs to finish
-  if [ "${PARALLEL}" -eq 1 ]; then
-    # Wait for all the jobs to finish
-    sem --wait
+  # Loop through the repos and generate list of repos to update
+  GenerateUpdateList
+  # Parse the updated array
+  ParseUpdateArray
+}
+################################################################################
+#### Function GetSourceRepoInfo ################################################
+GetSourceRepoInfo() {
+  # Pull in the repo name
+  REPO_NAME="${1}"
+
+  # Call GitHub to get the data
+  SOURCE_REPO_DATA=$(curl --fail -s -X GET \
+    --url "${GITHUB_API_URL}/repos/${SOURCE_ORG_NAME}/${REPO_NAME}" \
+    -H 'Accept: application/vnd.github.nebula-preview+json' \
+    -H "Authorization: Bearer ${SOURCE_TOKEN}" \
+    -H 'Content-Type: application/json' 2>&1)
+  
+  # Load the error code
+  ERROR_CODE=$?
+
+  # Check for errors
+  if [ "${ERROR_CODE}" -ne 0 ]; then
+    # We have an error, log it and exit
+    echo "ERROR! GitHub API call to gain source repo info failed with error code:[${ERROR_CODE}]!"
+    echo "ERROR:[${SOURCE_REPO_DATA}]"
+    {
+      echo "ERROR! GitHub API call to gain source repo info failed with error code:[${ERROR_CODE}]!"
+      echo "ERROR:[${SOURCE_REPO_DATA}]"
+    } >> "${LOG_FILE}"
+    exit 1
   fi
+
+  # Parse the return with jq to pull out the data we want
+  ARCHIVED=$(echo "${SOURCE_REPO_DATA}" | jq -r '.archived')
+  TEMPLATE=$(echo "${SOURCE_REPO_DATA}" | jq -r '.is_template')
+  VISIBILITY=$(echo "${SOURCE_REPO_DATA}" | jq -r '.visibility')
+
+  # Debug info
+  Debug "SOURCE_REPO_DATA:[${SOURCE_REPO_DATA}]"
+  Debug "ARCHIVED:[${ARCHIVED}]"
+  Debug "TEMPLATE:[${TEMPLATE}]"
+  Debug "VISIBILITY:[${VISIBILITY}]"
+
+  # Push the vars to the SOURCE_REPO_ARRAY
+  SOURCE_REPO_ARRAY+=("${SOURCE_ORG_NAME}/${REPO_NAME}|${VISIBILITY}|${TEMPLATE}|${ARCHIVED}")
+}
+################################################################################
+#### Function GetDestinationRepoInfo ###########################################
+GetDestinationRepoInfo() {
+  # Pull in the repo name
+  REPO_NAME="${1}"
+
+  # Call GitHub to get the data
+  DESTINATION_REPO_DATA=$(curl --fail -s -X GET \
+    --url "${GITHUB_API_URL}/repos/${DESTINATION_ORG_NAME}/${REPO_NAME}" \
+    -H 'Accept: application/vnd.github.nebula-preview+json' \
+    -H "Authorization: Bearer ${DESTINATION_TOKEN}" \
+    -H 'Content-Type: application/json' 2>&1)
+  
+  # Load the error code
+  ERROR_CODE=$?
+
+  # Check for errors
+  if [ "${ERROR_CODE}" -ne 0 ]; then
+    # We have an error, log it and exit
+    echo "ERROR! GitHub API call to gain source repo info failed with error code:[${ERROR_CODE}]!"
+    echo "ERROR:[${DESTINATION_REPO_DATA}]"
+    {
+      echo "ERROR! GitHub API call to gain source repo info failed with error code:[${ERROR_CODE}]!"
+      echo "ERROR:[${DESTINATION_REPO_DATA}]"
+    } >> "${LOG_FILE}"
+    exit 1
+  fi
+
+  # Parse the return with jq to pull out the data we want
+  ARCHIVED=$(echo "${DESTINATION_REPO_DATA}" | jq -r '.archived')
+  TEMPLATE=$(echo "${DESTINATION_REPO_DATA}" | jq -r '.is_template')
+  VISIBILITY=$(echo "${DESTINATION_REPO_DATA}" | jq -r '.visibility')
+
+  # Debug info
+  Debug "DESTINATION_REPO_DATA:[${DESTINATION_REPO_DATA}]"
+  Debug "ARCHIVED:[${ARCHIVED}]"
+  Debug "TEMPLATE:[${TEMPLATE}]"
+  Debug "VISIBILITY:[${VISIBILITY}]"
+
+  # Push the vars to the SOURCE_REPO_ARRAY
+  DESTINATION_REPO_ARRAY+=("${DESTINATION_ORG_NAME}/${REPO_NAME}|${VISIBILITY}|${TEMPLATE}|${ARCHIVED}")
 }
 ################################################################################
 #### Function ParseUpdateArray #################################################

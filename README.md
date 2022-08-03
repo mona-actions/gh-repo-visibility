@@ -17,14 +17,12 @@ You need to have the following to run this script successfully:
 
 The `input file` should be in the format:
 ```csv
-Org_Name/Repo_Name1,public,false
-Org_Name/Repo_Name2,internal,false
-Org_Name/Repo_Name3,private,true
+Repo_Name1
+Repo_Name2
+Repo_Name3
 ```
 
-It can handle multiple organizations and repositories.
-The last field in the input file is the isTemplate and is a boolean true or false.
-The script will still run if completly missing the `isTemplate` field.
+The script will read the input file list of repositories and replicate the visibility, template status, and archive status of each repository.
 
 ## Usage
 
