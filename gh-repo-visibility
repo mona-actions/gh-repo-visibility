@@ -254,11 +254,17 @@ DESTINATION_TOKEN="\$7"
 echo "----------------------------------------------------"
 echo "Updating visibility of:[\${ORG_NAME}/\${REPO_NAME}] to visibility:[\${VISIBILITY}] and template:[\${TEMPLATE}] and archived:[\${ARCHIVED}]"
 # Call the GitHub API to update the visibility of the repo
+if [ "$ARCHIVED" = false ]; then
 UPDATE_CMD=\$(curl --fail -s -o /dev/null -w "%{http_code}" -X PATCH \
   -H "Accept: application/vnd.github.v3+json" \
   -H "Authorization: token \${DESTINATION_TOKEN}" \
   -d "{\"visibility\": \"\${VISIBILITY}\", \"is_template\": \${TEMPLATE}, \"archived\": \${ARCHIVED} }" \
   "https://api.github.com/repos/\${ORG_NAME}/\${REPO_NAME}" 2>&1)
+else
+  UPDATE_CMD=422
+  echo ""
+  echo "Repo was archived. Will skip"
+fi
 
 ##########################
 # Check the shell return #
