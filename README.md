@@ -9,6 +9,7 @@ If an input file is provided, it will update the **visibility** of all repositor
 ## PREREQS
 
 You need to have the following to run this script successfully:
+
 - **GitHub Personal Access Token** with a scope of "repos" and access to the organization(s) that will be updated.
 - Either the name of the organizations to be synced, or a file containing the names of the repositories to be updated
 - **jq** installed on the machine running the query
@@ -16,6 +17,7 @@ You need to have the following to run this script successfully:
 ## Input file
 
 The `input file` should be in the format:
+
 ```csv
 Repo_Name1
 Repo_Name2
