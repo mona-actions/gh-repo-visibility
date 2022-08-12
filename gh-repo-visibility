@@ -760,10 +760,12 @@ GenerateUpdateList() {
     DESTINATION_REPO_STRING=$(echo "${DESTINATION_OBJECT}" | cut -d'|' -f1)
     DESTINATION_ORG=$(echo "${DESTINATION_REPO_STRING}" | cut -d'/' -f1)
     DESTINATION_REPO=$(echo "${DESTINATION_REPO_STRING}" | cut -d'/' -f2)
+    DESTINATION_REPO_ARCHIVED=$(echo "${DESTINATION_OBJECT}" | cut -d'|' -f4)
     # Debug Info
     Debug "DESTINATION_REPO_STRING:[${DESTINATION_REPO_STRING}]"
     Debug "DESTINATION_ORG:[${DESTINATION_ORG}]"
     Debug "DESTINATION_REPO:[${DESTINATION_REPO}]"
+    Debug "DESTINATION_REPO_ARCHIVED:[${DESTINATION_REPO_ARCHIVED}]"
     # Loop through the source repos and see if we have a match
     for SOURCE_OBJECT in "${SOURCE_REPO_ARRAY[@]}"; do
       # Split the repo name and visibility
@@ -781,8 +783,9 @@ GenerateUpdateList() {
       Debug "SOURCE_REPO_VISIBILITY:[${SOURCE_REPO_VISIBILITY}]"
       Debug "SOURCE_REPO_TEMPLATE:[${SOURCE_REPO_TEMPLATE}]"
       Debug "SOURCE_REPO_ARCHIVED:[${SOURCE_REPO_ARCHIVED}]"
+
       # Check if the repo names match
-      if [ "${SOURCE_REPO}" == "${DESTINATION_REPO}" ]; then
+      if [ "${SOURCE_REPO}" == "${DESTINATION_REPO}" ] && [ "${DESTINATION_REPO_ARCHIVED}" == "false" ];  then
         # We have a match, update the UPDATE_REPO_ARRAY with the SOURCE_REPO_VISIBILITY and SOURCE_REPO_TEMPLATE
         UPDATE_REPO_ARRAY+=("${DESTINATION_ORG}/${DESTINATION_REPO}|${SOURCE_REPO_VISIBILITY}|${SOURCE_REPO_TEMPLATE}|${SOURCE_REPO_ARCHIVED}")
         echo "Adding:[${DESTINATION_ORG}/${DESTINATION_REPO}|${SOURCE_REPO_VISIBILITY}|${SOURCE_REPO_TEMPLATE}|${SOURCE_REPO_ARCHIVED}] to update array"
